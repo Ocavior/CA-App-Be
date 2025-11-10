@@ -22,11 +22,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node ${{ env.NODE_VERSION }}
+      # If a lockfile exists -> enable caching
+      - name: Setup Node (with cache)
+        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+          cache-dependency-path: |
+            **/package-lock.json
+            **/npm-shrinkwrap.json
+            **/yarn.lock
+
+      # If no lockfile -> no cache (avoids the error you saw)
+      - name: Setup Node (no cache)
+        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install / Build / Test (lockfile-aware)
         shell: bash
@@ -45,8 +58,7 @@ jobs:
           npm run test --if-present || true
           popd
 
-      # --- OPTION A: Remote build on Azure (recommended for Functions) ---
-      # Keeps your artifact small and lets Kudu/Oryx do `npm install` on server.
+      # --- Remote build on Azure (recommended for Functions) ---
       - name: Enable remote build settings
         run: |
           echo "SCM_DO_BUILD_DURING_DEPLOYMENT=true" >> $GITHUB_ENV
