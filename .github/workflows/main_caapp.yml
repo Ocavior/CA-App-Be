@@ -1,15 +1,14 @@
 # Build & deploy Node.js to Azure Function App (no artifacts)
-name: Build and deploy Node.js project to Azure Function App - sintracap-function
+name: Build and deploy Node.js project to Azure Function App - arcare-admin
 
 on:
   push:
-    branches: [ main ]
+    branches: [ backend-branch ]
   workflow_dispatch:
 
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
-  # Use a Functions-supported Node LTS. 20.x is broadly supported.
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '20.x'   # Safer Functions LTS. Switch to '22.x' only if your plan supports it.
 
 jobs:
   build-and-deploy:
@@ -22,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # If a lockfile exists -> enable caching
+      # Use cache only if a lockfile exists (prevents cache error when none)
       - name: Setup Node (with cache)
         if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
         uses: actions/setup-node@v4
@@ -34,7 +33,6 @@ jobs:
             **/npm-shrinkwrap.json
             **/yarn.lock
 
-      # If no lockfile -> no cache (avoids the error you saw)
       - name: Setup Node (no cache)
         if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == '' }}
         uses: actions/setup-node@v4
@@ -53,13 +51,12 @@ jobs:
             echo "No lockfile -> npm install"
             npm install --no-audit --no-fund
           fi
-
           npm run build --if-present
           npm run test --if-present || true
           popd
 
-      # --- Remote build on Azure (recommended for Functions) ---
-      - name: Enable remote build settings
+      # Remote build on Azure (keeps deployment small; Azure runs npm install via Oryx)
+      - name: Enable remote build
         run: |
           echo "SCM_DO_BUILD_DURING_DEPLOYMENT=true" >> $GITHUB_ENV
           echo "ENABLE_ORYX_BUILD=true" >> $GITHUB_ENV
@@ -67,14 +64,14 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_7225967C3AEE46249DB48AF9C402AD6F }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_8AA9F4D4A0E344779FB8F193D9320B5D }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1EF69EB0806C4697875BCECFB72B0F1F }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_D9AE101ACEB242D79D56895AC9FF5072 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_1EEEF44B4DE04EBE89F8EAD0C80516FC }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_771662B1846042769E83399535D3B1F8 }}
 
       - name: Deploy to Azure Functions (remote build)
         uses: Azure/functions-action@v1
         with:
-          app-name: 'sintracap-function'
+          app-name: 'arcare-admin'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
           scm-do-build-during-deployment: true
