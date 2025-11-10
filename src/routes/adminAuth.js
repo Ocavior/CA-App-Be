@@ -15,7 +15,7 @@ const adminAuthRoutes = {
         {
             method: 'POST',
             path: '/auth/create',
-            middleware: [],
+            middleware: [authenticateToken],
             handler: authController.createUser,
             description: 'Create a new user account'
         },

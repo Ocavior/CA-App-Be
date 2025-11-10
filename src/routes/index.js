@@ -1,4 +1,6 @@
 const adminAuthRoutes = require('./adminAuth');
+const caSubmissionRoutes = require('./caSubmissionRoutes');
+
 const responseWrapper = require('../utils/responseWrapper');
 class Router {
     constructor() {
@@ -10,6 +12,7 @@ class Router {
     setupRoutes() {
 
         adminAuthRoutes.registerRoutes(this);
+        caSubmissionRoutes.registerRoutes(this);
         // Health check
         this.addRoute('GET', '/health-check', this.healthCheck);
 
@@ -19,13 +22,13 @@ class Router {
     addRoute(method, path, handler) {
         console.log(`Adding route: ${method} ${path}`);
         console.log(`Handler type: ${typeof handler}`);
-        
+
         // Normalize the path
         const normalizedPath = this.normalizePath(path);
         const key = `${method}:${normalizedPath}`;
-        
+
         this.routes.set(key, handler);
-        
+
         // Compile the route pattern for better matching
         this.compileRoute(method, normalizedPath);
     }
@@ -44,7 +47,7 @@ class Router {
 
     compileRoute(method, path) {
         const key = `${method}:${path}`;
-        
+
         // Convert path pattern to regex and extract parameter names
         const paramNames = [];
         let regexPattern = path
@@ -56,15 +59,15 @@ class Router {
 
         // Ensure exact match by adding start and end anchors
         regexPattern = '^' + regexPattern + '$';
-        
+
         const regex = new RegExp(regexPattern);
-        
+
         this.compiledRoutes.set(key, {
             regex,
             paramNames,
             originalPath: path
         });
-        
+
         console.log(`Compiled route: ${method} ${path} -> ${regexPattern}, params: [${paramNames.join(', ')}]`);
     }
 
@@ -120,14 +123,12 @@ class Router {
             context.log("body buffer", bodyBuffer);
 
             // More robust boundary extraction
-            let boundary;
-            try {
-                boundary = multipart.getBoundary(contentType);
-            } catch (boundaryError) {
-                context.error('Error extracting boundary using parse-multipart:', boundaryError);
-                // Fallback to manual boundary extraction
-                boundary = this.extractBoundary(contentType, context);
+            const boundary = this.extractBoundary(contentType, context);
+            if (!boundary) {
+                context.error('Content-Type header:', contentType);
+                throw new Error('Missing or invalid boundary in multipart/form-data');
             }
+
 
             if (!boundary) {
                 context.error('Content-Type header:', contentType);
@@ -390,7 +391,7 @@ class Router {
         }
     }
 
-    // File validation method
+    // In your Router class, update validateFileParts method
     validateFileParts(files) {
         const allowedTypes = [
             'application/pdf',
@@ -398,28 +399,27 @@ class Router {
             'image/jpg',
             'image/png',
             'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'application/vnd.oasis.opendocument.spreadsheet' // .ods
         ];
 
         const maxFileSize = 10 * 1024 * 1024; // 10MB
 
         for (const [fieldName, file] of Object.entries(files)) {
-            // Check if file has a name
             if (!file.originalname) {
                 throw new Error(`File in field ${fieldName} must have a filename`);
             }
 
-            // Check file size
             if (file.size > maxFileSize) {
                 throw new Error(`File ${file.originalname} exceeds maximum size of 10MB`);
             }
 
-            // Check file type
             if (!allowedTypes.includes(file.mimetype)) {
-                throw new Error(`File ${file.originalname} has unsupported type: ${file.mimetype}`);
+                throw new Error(`File ${file.originalname} has unsupported type: ${file.mimetype}. Allowed types: PDF, Images, Word, Excel`);
             }
 
-            // Check filename length
             if (file.originalname.length > 255) {
                 throw new Error(`Filename ${file.originalname} is too long`);
             }
@@ -547,7 +547,7 @@ class Router {
             const match = pathname.match(compiledRoute.regex);
             if (match) {
                 const params = {};
-                
+
                 // Extract parameters from the match
                 for (let i = 0; i < compiledRoute.paramNames.length; i++) {
                     const paramName = compiledRoute.paramNames[i];
