@@ -87,7 +87,13 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.getServiceStats,
       description: 'Get detailed service statistics'
     },
-    
+
+    {
+      method: 'PATCH',
+      path: '/ca/submissions/:id/active',
+      handler: CaSubmissionController.toggleActiveStatus,
+      description: 'Toggle or set isActive status for a CA submission'
+    },
     // ==================== SERVICE-SPECIFIC ROUTES ====================
     {
       method: 'GET',
@@ -113,7 +119,8 @@ const caSubmissionRoutes = {
         };
       },
       description: 'Health check endpoint (no authentication required)'
-    }
+    },
+    
   ],
   
   registerRoutes: function(router) {

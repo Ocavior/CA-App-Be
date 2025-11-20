@@ -805,6 +805,44 @@ async function bulkDelete(request, context) {
   }
 }
 
+async function toggleActiveStatus(request, context) {
+  try {
+    const { id } = request.params;  // ID from route
+    const payload = (await request.json()) || {};
+    const { isActive } = payload;
+
+    // Call service to toggle or force value
+    const updated = await toggleCaActive(id, isActive);
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: `CA is now ${updated.isActive ? 'active' : 'inactive'}`,
+        data: {
+          id: updated._id,
+          isActive: updated.isActive
+        }
+      }
+    };
+  } catch (err) {
+    context.error('Toggle isActive error:', err);
+
+    return {
+      status: err.statusCode || (err.name === 'CastError' ? 400 : 500),
+      jsonBody: {
+        success: false,
+        message:
+          err.statusCode === 404
+            ? 'CA submission not found'
+            : err.name === 'CastError'
+            ? 'Invalid submission ID'
+            : 'Failed to update CA status'
+      }
+    };
+  }
+}
+
 module.exports = {
   importExcel,
   getSubmissions,
@@ -816,5 +854,6 @@ module.exports = {
   deleteSubmission,
   createSubmission,
   updateSubmission,
-  bulkDelete
+  bulkDelete,
+  toggleActiveStatus
 };

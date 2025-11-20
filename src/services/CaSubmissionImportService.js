@@ -749,10 +749,30 @@ async function updateCaSubmission(id, payload) {
   return updated; // may be null if not found
 }
 
+async function toggleCaActive(id, explicitValue = null) {
+  const ca = await CaSubmission.findById(id);
+
+  if (!ca) {
+    const err = new Error('Not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (typeof explicitValue === 'boolean') {
+    ca.isActive = explicitValue;
+  } else {
+    ca.isActive = !ca.isActive; // toggle
+  }
+
+  await ca.save();
+  return ca;
+}
+
 module.exports = {
   importFromExcel,
   createCaSubmission,
   updateCaSubmission,
   SERVICE_KEY_MAP,
-  HEADER_MAP
+  HEADER_MAP,
+  toggleCaActive
 };

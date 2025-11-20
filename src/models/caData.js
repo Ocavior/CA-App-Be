@@ -244,7 +244,10 @@ const CaSubmissionSchema = new mongoose.Schema({
     type: Date, 
     default: Date.now 
   },
-  
+  isActive:{
+    type: Boolean,
+    default: true
+  },
   // Store original CSV row for debugging (only for imports)
   rawData: { 
     type: mongoose.Schema.Types.Mixed 
