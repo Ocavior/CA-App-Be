@@ -1,10 +1,11 @@
 // controllers/CaSubmissionController.js
-const { importFromExcel } = require('../services/CaSubmissionImportService');
+const { importFromExcel, createCaSubmission, updateCaSubmission } = require('../services/CaSubmissionImportService');
 const CaSubmission = require('../models/caData');
 
 /**
  * Import Excel file with CA submissions
  * POST /ca/import
+ * Upload file with field name "file" or "documents"
  */
 async function importExcel(request, context) {
   try {
@@ -12,22 +13,22 @@ async function importExcel(request, context) {
     if (!request.files || Object.keys(request.files).length === 0) {
       return {
         status: 400,
-        jsonBody: { 
-          success: false, 
-          message: 'No file uploaded. Please upload an Excel file with field name "file" or "documents".' 
+        jsonBody: {
+          success: false,
+          message: 'No file uploaded. Please upload an Excel file with field name "file" or "documents".'
         }
       };
     }
 
     // Get the file - check both 'file' and 'documents' field names
     const uploadedFile = request.files.file || request.files.documents || Object.values(request.files)[0];
-    
+
     if (!uploadedFile || !uploadedFile.data) {
       return {
         status: 400,
-        jsonBody: { 
-          success: false, 
-          message: 'Invalid file upload. File data is missing.' 
+        jsonBody: {
+          success: false,
+          message: 'Invalid file upload. File data is missing.'
         }
       };
     }
@@ -48,27 +49,27 @@ async function importExcel(request, context) {
     if (!validExcelTypes.includes(uploadedFile.mimetype)) {
       return {
         status: 400,
-        jsonBody: { 
-          success: false, 
-          message: `Invalid file type. Expected Excel file (.xlsx, .xls), got ${uploadedFile.mimetype}` 
+        jsonBody: {
+          success: false,
+          message: `Invalid file type. Expected Excel file (.xlsx, .xls), got ${uploadedFile.mimetype}`
         }
       };
     }
 
     // Process the Excel file
-    const result = await importFromExcel({ 
-      buffer: uploadedFile.data, 
-      upsert: true 
+    const result = await importFromExcel({
+      buffer: uploadedFile.data,
+      upsert: true
     });
 
     context.log('Import completed:', result);
 
     return {
       status: 200,
-      jsonBody: { 
-        success: true, 
+      jsonBody: {
+        success: true,
         message: result.message || 'File imported successfully',
-        data: result 
+        data: result
       }
     };
 
@@ -76,10 +77,10 @@ async function importExcel(request, context) {
     context.error('Import error:', err);
     return {
       status: 500,
-      jsonBody: { 
-        success: false, 
-        message: 'Failed to import file', 
-        error: err.message 
+      jsonBody: {
+        success: false,
+        message: 'Failed to import file',
+        error: err.message
       }
     };
   }
@@ -98,50 +99,58 @@ async function importExcel(request, context) {
  *   - email: filter by email (partial match)
  *   - state: filter by state (exact match)
  *   - city: filter by city (exact match)
- *   - services: filter by service flags (comma-separated)
+ *   - services: filter by services offered (comma-separated service keys)
+ *   - source: filter by source (manual, csv_import, api, web_form)
+ *   - startDate: filter by timestamp start date
+ *   - endDate: filter by timestamp end date
  */
 async function getSubmissions(request, context) {
   try {
     const query = request.query || {};
-    
+
     // Pagination
     const page = parseInt(query.page) || 1;
     const limit = Math.min(parseInt(query.limit) || 10, 100); // Max 100 per page
     const skip = (page - 1) * limit;
-    
+
     // Sorting
     const sortBy = query.sortBy || 'createdAt';
     const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
     const sort = { [sortBy]: sortOrder };
-    
+
     // Build filter query
     const filter = {};
-    
+
     // Name filter (case-insensitive partial match)
     if (query.name) {
       filter.name = { $regex: query.name, $options: 'i' };
     }
-    
+
     // Mobile filter (exact match)
     if (query.mobile) {
       filter.mobile = query.mobile;
     }
-    
+
     // Email filter (case-insensitive partial match)
     if (query.email) {
       filter.email = { $regex: query.email, $options: 'i' };
     }
-    
+
     // State filter (exact match, case-insensitive)
     if (query.state) {
       filter.state = { $regex: `^${query.state}$`, $options: 'i' };
     }
-    
+
     // City filter (exact match, case-insensitive)
     if (query.city) {
       filter.city = { $regex: `^${query.city}$`, $options: 'i' };
     }
-    
+
+    // Source filter
+    if (query.source) {
+      filter.source = query.source;
+    }
+
     // Date range filters
     if (query.startDate || query.endDate) {
       filter.timestamp = {};
@@ -152,36 +161,36 @@ async function getSubmissions(request, context) {
         filter.timestamp.$lte = new Date(query.endDate);
       }
     }
-    
-    // Service flags filter
+
+    // Service filters - NEW: works with services.{key}.offered structure
     if (query.services) {
       const services = query.services.split(',').map(s => s.trim());
-      services.forEach(service => {
-        filter[`serviceFlags.${service}`] = true;
+      services.forEach(serviceKey => {
+        filter[`services.${serviceKey}.offered`] = true;
       });
     }
-    
+
     // Employer filter
     if (query.employer) {
       filter.employer = { $regex: query.employer, $options: 'i' };
     }
-    
+
     // Execute query
     const [submissions, totalCount] = await Promise.all([
       CaSubmission.find(filter)
-        .select('-rawRow') // Exclude raw row data from response
+        .select('-rawData') // Exclude raw data from response
         .sort(sort)
         .skip(skip)
         .limit(limit)
         .lean(),
       CaSubmission.countDocuments(filter)
     ]);
-    
+
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
-    
+
     return {
       status: 200,
       jsonBody: {
@@ -200,7 +209,7 @@ async function getSubmissions(request, context) {
         }
       }
     };
-    
+
   } catch (err) {
     context.error('Get submissions error:', err);
     return {
@@ -221,7 +230,7 @@ async function getSubmissions(request, context) {
 async function getSubmissionById(request, context) {
   try {
     const { id } = request.params;
-    
+
     if (!id) {
       return {
         status: 400,
@@ -231,9 +240,11 @@ async function getSubmissionById(request, context) {
         }
       };
     }
-    
-    const submission = await CaSubmission.findById(id).lean();
-    
+
+    const submission = await CaSubmission.findById(id)
+      .select('-rawData')
+      .lean();
+
     if (!submission) {
       return {
         status: 404,
@@ -243,7 +254,7 @@ async function getSubmissionById(request, context) {
         }
       };
     }
-    
+
     return {
       status: 200,
       jsonBody: {
@@ -251,7 +262,7 @@ async function getSubmissionById(request, context) {
         data: submission
       }
     };
-    
+
   } catch (err) {
     context.error('Get submission by ID error:', err);
     return {
@@ -277,7 +288,7 @@ async function searchSubmissions(request, context) {
   try {
     const query = request.query || {};
     const searchQuery = query.q;
-    
+
     if (!searchQuery || !searchQuery.trim()) {
       return {
         status: 400,
@@ -287,28 +298,28 @@ async function searchSubmissions(request, context) {
         }
       };
     }
-    
+
     // Pagination
     const page = parseInt(query.page) || 1;
     const limit = Math.min(parseInt(query.limit) || 10, 100);
     const skip = (page - 1) * limit;
-    
+
     // Text search
     const [submissions, totalCount] = await Promise.all([
       CaSubmission.find(
         { $text: { $search: searchQuery } },
         { score: { $meta: 'textScore' } }
       )
-        .select('-rawRow')
+        .select('-rawData')
         .sort({ score: { $meta: 'textScore' } })
         .skip(skip)
         .limit(limit)
         .lean(),
       CaSubmission.countDocuments({ $text: { $search: searchQuery } })
     ]);
-    
+
     const totalPages = Math.ceil(totalCount / limit);
-    
+
     return {
       status: 200,
       jsonBody: {
@@ -327,7 +338,7 @@ async function searchSubmissions(request, context) {
         }
       }
     };
-    
+
   } catch (err) {
     context.error('Search submissions error:', err);
     return {
@@ -351,48 +362,82 @@ async function getStats(request, context) {
       totalSubmissions,
       submissionsByState,
       submissionsByCity,
+      submissionsBySource,
       topServices
     ] = await Promise.all([
+      // Total count
       CaSubmission.countDocuments(),
-      
+
       // Group by state
       CaSubmission.aggregate([
         { $group: { _id: '$state', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 }
       ]),
-      
+
       // Group by city
       CaSubmission.aggregate([
         { $group: { _id: '$city', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 10 }
       ]),
-      
-      // Count service flags
+
+      // Group by source
+      CaSubmission.aggregate([
+        { $group: { _id: '$source', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+
+      // Count services offered - NEW: works with services.{key}.offered structure
       CaSubmission.aggregate([
         {
           $project: {
-            services: { $objectToArray: '$serviceFlags' }
+            servicesArray: { $objectToArray: '$services' }
           }
         },
-        { $unwind: '$services' },
+        { $unwind: '$servicesArray' },
         {
           $match: {
-            'services.v': true
+            'servicesArray.v.offered': true
           }
         },
         {
           $group: {
-            _id: '$services.k',
+            _id: '$servicesArray.k',
             count: { $sum: 1 }
           }
         },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
+        { $sort: { count: -1 } }
       ])
     ]);
-    
+
+    // Get average service count per CA
+    const avgServicesResult = await CaSubmission.aggregate([
+      {
+        $project: {
+          serviceCount: {
+            $size: {
+              $filter: {
+                input: { $objectToArray: '$services' },
+                as: 'service',
+                cond: { $eq: ['$$service.v.offered', true] }
+              }
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          avgServices: { $avg: '$serviceCount' },
+          maxServices: { $max: '$serviceCount' },
+          minServices: { $min: '$serviceCount' }
+        }
+      }
+    ]);
+
+    const avgServices = avgServicesResult[0] || { avgServices: 0, maxServices: 0, minServices: 0 };
+
     return {
       status: 200,
       jsonBody: {
@@ -401,11 +446,17 @@ async function getStats(request, context) {
           totalSubmissions,
           byState: submissionsByState,
           byCity: submissionsByCity,
-          topServices
+          bySource: submissionsBySource,
+          topServices,
+          serviceStats: {
+            averageServicesPerCA: Math.round(avgServices.avgServices * 10) / 10,
+            maxServicesOffered: avgServices.maxServices,
+            minServicesOffered: avgServices.minServices
+          }
         }
       }
     };
-    
+
   } catch (err) {
     context.error('Get stats error:', err);
     return {
@@ -420,13 +471,160 @@ async function getStats(request, context) {
 }
 
 /**
+ * Get service-specific statistics
+ * GET /ca/stats/services
+ * Returns detailed stats about each service
+ */
+async function getServiceStats(request, context) {
+  try {
+    const stats = await CaSubmission.getServiceStats();
+
+    // Get list of CAs for each service with details
+    const { SERVICES } = require('../models/CaSubmission');
+    const detailedStats = await Promise.all(
+      SERVICES.map(async (service) => {
+        const count = stats[service.name] || 0;
+        
+        // Get sample CAs offering this service
+        const sampleCAs = await CaSubmission.find({
+          [`services.${service.key}.offered`]: true
+        })
+        .select('name city state')
+        .limit(5)
+        .lean();
+
+        return {
+          id: service.id,
+          name: service.name,
+          key: service.key,
+          count,
+          percentage: Math.round((count / (await CaSubmission.countDocuments()) * 100) * 10) / 10,
+          sampleCAs
+        };
+      })
+    );
+
+    // Sort by count
+    detailedStats.sort((a, b) => b.count - a.count);
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        data: {
+          services: detailedStats,
+          totalCAs: await CaSubmission.countDocuments()
+        }
+      }
+    };
+
+  } catch (err) {
+    context.error('Get service stats error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to fetch service statistics',
+        error: err.message
+      }
+    };
+  }
+}
+
+/**
+ * Get CAs by service
+ * GET /ca/by-service/:serviceKey
+ * Query params:
+ *   - page, limit, state, city (same as getSubmissions)
+ */
+async function getByService(request, context) {
+  try {
+    const { serviceKey } = request.params;
+    const query = request.query || {};
+
+    if (!serviceKey) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'Service key is required'
+        }
+      };
+    }
+
+    // Pagination
+    const page = parseInt(query.page) || 1;
+    const limit = Math.min(parseInt(query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
+
+    // Build filter
+    const filter = {
+      [`services.${serviceKey}.offered`]: true
+    };
+
+    // Add optional filters
+    if (query.state) {
+      filter.state = { $regex: `^${query.state}$`, $options: 'i' };
+    }
+    if (query.city) {
+      filter.city = { $regex: `^${query.city}$`, $options: 'i' };
+    }
+
+    // Execute query
+    const [submissions, totalCount] = await Promise.all([
+      CaSubmission.find(filter)
+        .select('-rawData')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      CaSubmission.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        data: submissions,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalCount,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
+        filter: {
+          serviceKey,
+          state: query.state,
+          city: query.city
+        }
+      }
+    };
+
+  } catch (err) {
+    context.error('Get by service error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to fetch submissions by service',
+        error: err.message
+      }
+    };
+  }
+}
+
+/**
  * Delete a submission by ID
  * DELETE /ca/submissions/:id
  */
 async function deleteSubmission(request, context) {
   try {
     const { id } = request.params;
-    
+
     if (!id) {
       return {
         status: 400,
@@ -436,9 +634,9 @@ async function deleteSubmission(request, context) {
         }
       };
     }
-    
+
     const result = await CaSubmission.findByIdAndDelete(id);
-    
+
     if (!result) {
       return {
         status: 404,
@@ -448,7 +646,7 @@ async function deleteSubmission(request, context) {
         }
       };
     }
-    
+
     return {
       status: 200,
       jsonBody: {
@@ -456,7 +654,7 @@ async function deleteSubmission(request, context) {
         message: 'Submission deleted successfully'
       }
     };
-    
+
   } catch (err) {
     context.error('Delete submission error:', err);
     return {
@@ -470,11 +668,153 @@ async function deleteSubmission(request, context) {
   }
 }
 
+/**
+ * Create a new CA submission manually
+ * POST /ca/submissions
+ */
+async function createSubmission(request, context) {
+  try {
+    const payload = (await request.json()) || {};
+
+    // Basic validation: require at least a name
+    if (!payload.name || !String(payload.name).trim()) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'Name is required to create a CA submission'
+        }
+      };
+    }
+
+    const submission = await createCaSubmission(payload);
+
+    return {
+      status: 201,
+      jsonBody: {
+        success: true,
+        message: 'CA submission created successfully',
+        data: submission
+      }
+    };
+  } catch (err) {
+    context.error('Create submission error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to create submission',
+        error: err.message
+      }
+    };
+  }
+}
+
+/**
+ * Update an existing CA submission
+ * PUT /ca/submissions/:id
+ */
+async function updateSubmission(request, context) {
+  try {
+    const { id } = request.params;
+    const payload = (await request.json()) || {};
+
+    if (!id) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'Submission ID is required'
+        }
+      };
+    }
+
+    const updated = await updateCaSubmission(id, payload);
+
+    if (!updated) {
+      return {
+        status: 404,
+        jsonBody: {
+          success: false,
+          message: 'Submission not found'
+        }
+      };
+    }
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: 'Submission updated successfully',
+        data: updated
+      }
+    };
+  } catch (err) {
+    context.error('Update submission error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to update submission',
+        error: err.message
+      }
+    };
+  }
+}
+
+/**
+ * Bulk delete submissions
+ * DELETE /ca/submissions/bulk
+ * Body: { ids: ['id1', 'id2', ...] }
+ */
+async function bulkDelete(request, context) {
+  try {
+    const { ids } = (await request.json()) || {};
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'Array of IDs is required'
+        }
+      };
+    }
+
+    const result = await CaSubmission.deleteMany({ _id: { $in: ids } });
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: `Successfully deleted ${result.deletedCount} submissions`,
+        deletedCount: result.deletedCount
+      }
+    };
+
+  } catch (err) {
+    context.error('Bulk delete error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to delete submissions',
+        error: err.message
+      }
+    };
+  }
+}
+
 module.exports = {
   importExcel,
   getSubmissions,
   getSubmissionById,
   searchSubmissions,
   getStats,
-  deleteSubmission
+  getServiceStats,
+  getByService,
+  deleteSubmission,
+  createSubmission,
+  updateSubmission,
+  bulkDelete
 };

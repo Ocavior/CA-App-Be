@@ -24,7 +24,7 @@ const adminSchema = new mongoose.Schema({
     },
     applicationCode:{
         type: String,
-        default: "CA-Application"
+        default: "CaApp"
     },
     isActive:{
         type: Boolean
