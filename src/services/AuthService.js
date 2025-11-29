@@ -182,7 +182,7 @@ class AuthService {
             const normalizedEmail = email.toLowerCase();
             const normalizedUsername = username.toLowerCase();
 
-            // Check if user already exists
+            // Check if user already exists 
             const existingUser = await User.findOne({
                 $or: [
                     { email: normalizedEmail },
@@ -382,8 +382,8 @@ class AuthService {
     static async getAdminUsers({ role } = {}) {
         const query = {};
 
+        // Validate & apply role filter if provided
         if (role) {
-            // Optional: validate allowed roles
             const allowedRoles = ['admin', 'operational'];
             if (!allowedRoles.includes(role)) {
                 const err = new Error('Invalid role provided');
@@ -393,14 +393,24 @@ class AuthService {
             query.role = role;
         }
 
-        // Optional: only active users
-        // query.isActive = true;
+        // Fetch users (no password)
+        const users = await User.find(query).select('-password');
 
-        // Never return password hash to client
-        const admins = await User.find(query).select('-password');
+        // Counts for both roles
+        const [adminCount, operationalCount] = await Promise.all([
+            User.countDocuments({ role: 'admin' }),
+            User.countDocuments({ role: 'operational' })
+        ]);
 
-        return admins;
+        return {
+            users,
+            counts: {
+                admin: adminCount,
+                operational: operationalCount
+            }
+        };
     }
+
 }
 
 module.exports = AuthService;

@@ -241,17 +241,20 @@ class AuthController {
 
     adminUsers = async (request, context) => {
         try {
-            // For Azure Functions HTTP v4: query params
-            const { role } = request.query;
+            // Azure Functions HTTP v4 query extraction
+            const role = request.query?.get ? request.query.get('role') : request.query?.role;
 
-            const admins = await AuthService.getAdminUsers({ role });
+            const { users, counts } = await AuthService.getAdminUsers({ role });
 
             return {
                 status: 200,
                 jsonBody: {
                     success: true,
                     message: 'Admin users fetched successfully',
-                    data: admins
+                    data: {
+                        users,
+                        counts
+                    }
                 }
             };
         } catch (error) {
@@ -264,7 +267,8 @@ class AuthController {
                 }
             };
         }
-    }
+    };
+
 }
 
 module.exports = new AuthController();

@@ -1,7 +1,7 @@
 // controllers/CaSubmissionController.js
 const { importFromExcel, createCaSubmission, updateCaSubmission } = require('../services/CaSubmissionImportService');
 const CaSubmission = require('../models/caData');
-
+const { SERVICES } = require('../models/caData');
 /**
  * Import Excel file with CA submissions
  * POST /ca/import
@@ -477,34 +477,40 @@ async function getStats(request, context) {
  */
 async function getServiceStats(request, context) {
   try {
-    const stats = await CaSubmission.getServiceStats();
+    // Total docs (you can add { isActive: true } if needed)
+    const totalCAs = await CaSubmission.countDocuments();
 
-    // Get list of CAs for each service with details
-    const { SERVICES } = require('../models/CaSubmission');
+    // Uses the static method defined on the schema
+    const statsByName = await CaSubmission.getServiceStats();
+
     const detailedStats = await Promise.all(
       SERVICES.map(async (service) => {
-        const count = stats[service.name] || 0;
-        
-        // Get sample CAs offering this service
+        const count = statsByName[service.name] || 0;
+
         const sampleCAs = await CaSubmission.find({
           [`services.${service.key}.offered`]: true
         })
-        .select('name city state')
-        .limit(5)
-        .lean();
+          .select('name city state')
+          .limit(5)
+          .lean();
+
+        const percentage =
+          totalCAs > 0
+            ? Number(((count / totalCAs) * 100).toFixed(1))
+            : 0;
 
         return {
           id: service.id,
           name: service.name,
           key: service.key,
           count,
-          percentage: Math.round((count / (await CaSubmission.countDocuments()) * 100) * 10) / 10,
+          percentage,
           sampleCAs
         };
       })
     );
 
-    // Sort by count
+    // Sort by count desc
     detailedStats.sort((a, b) => b.count - a.count);
 
     return {
@@ -513,11 +519,10 @@ async function getServiceStats(request, context) {
         success: true,
         data: {
           services: detailedStats,
-          totalCAs: await CaSubmission.countDocuments()
+          totalCAs
         }
       }
     };
-
   } catch (err) {
     context.error('Get service stats error:', err);
     return {
@@ -836,8 +841,8 @@ async function toggleActiveStatus(request, context) {
           err.statusCode === 404
             ? 'CA submission not found'
             : err.name === 'CastError'
-            ? 'Invalid submission ID'
-            : 'Failed to update CA status'
+              ? 'Invalid submission ID'
+              : 'Failed to update CA status'
       }
     };
   }
