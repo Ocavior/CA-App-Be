@@ -13,11 +13,11 @@ class AuthService {
     static async generateTokens(user) {
         try {
             const jwtAccessToken = jwt.sign(
-                { 
-                    userId: user._id, 
+                {
+                    userId: user._id,
                     email: user.email,
                     username: user.username,
-                    role: user.role 
+                    role: user.role
                 },
                 constants.JWT_SECRET,
                 { expiresIn: constants.JWT_EXPIRE }
@@ -46,10 +46,10 @@ class AuthService {
         try {
             console.log(`Sending password reset OTP to: ${email}`);
             console.log(`OTP: ${otp}`);
-            
+
             // TODO: Implement actual email sending logic here
             // Example: await EmailService.sendEmail({ to: email, subject: 'Password Reset', body: `Your OTP is: ${otp}` });
-            
+
             return { success: true };
         } catch (error) {
             throw logError('sendPasswordResetEmail', error, { email });
@@ -162,29 +162,40 @@ class AuthService {
     /**
      * Create operational user (admin only)
      */
-    static async createOperationalUser(userData) {
+    // inside AuthService
+    static async createUser(userData) {
         try {
             const { username, email, password, phoneNumber } = userData;
+            let { role } = userData;
 
             // Validate required fields
             if (!username || !email || !password || !phoneNumber) {
                 throw new Error('Username, email, password, and phone number are required');
             }
 
+            // Normalize role and restrict to allowed values
+            const allowedRoles = ['admin', 'operational'];
+            if (!role || !allowedRoles.includes(role)) {
+                role = 'operational'; // default when invalid/missing
+            }
+
+            const normalizedEmail = email.toLowerCase();
+            const normalizedUsername = username.toLowerCase();
+
             // Check if user already exists
             const existingUser = await User.findOne({
                 $or: [
-                    { email: email.toLowerCase() },
-                    { username: username.toLowerCase() },
+                    { email: normalizedEmail },
+                    { username: normalizedUsername },
                     { phoneNumber }
                 ]
             });
 
             if (existingUser) {
-                if (existingUser.email === email.toLowerCase()) {
+                if (existingUser.email === normalizedEmail) {
                     throw new Error('User already exists with this email');
                 }
-                if (existingUser.username === username.toLowerCase()) {
+                if (existingUser.username === normalizedUsername) {
                     throw new Error('Username already taken');
                 }
                 if (existingUser.phoneNumber === phoneNumber) {
@@ -196,13 +207,13 @@ class AuthService {
             const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
             const hashedPassword = await bcrypt.hash(password, salt);
 
-            // Create operational user
+            // Create user (admin or operational)
             const user = await User.create({
-                username: username.toLowerCase(),
-                email: email.toLowerCase(),
+                username: normalizedUsername,
+                email: normalizedEmail,
                 password: hashedPassword,
                 phoneNumber,
-                role: 'operational'
+                role
             });
 
             return {
@@ -215,9 +226,10 @@ class AuthService {
                 }
             };
         } catch (error) {
-            throw logError('createOperationalUser', error, { email: userData.email });
+            throw logError('createUser', error, { email: userData.email });
         }
     }
+
 
     /**
      * Request password reset
@@ -232,7 +244,7 @@ class AuthService {
 
             // Generate OTP
             const otp = this.generateOTP();
-            
+
             // Store OTP and expiry (1 hour)
             user.resetPasswordToken = otp;
             user.resetPasswordExpire = new Date(Date.now() + 3600000);
@@ -256,7 +268,7 @@ class AuthService {
     static async verifyResetToken(email, token) {
         try {
             const user = await User.findOne({ email: email.toLowerCase() });
-            
+
             if (!user) {
                 throw new Error('User not found');
             }
@@ -333,7 +345,7 @@ class AuthService {
                 const baseUsername = profile.email.split('@')[0].toLowerCase();
                 let username = baseUsername;
                 let counter = 1;
-                
+
                 // Ensure unique username
                 while (await User.findOne({ username })) {
                     username = `${baseUsername}${counter}`;
@@ -365,6 +377,29 @@ class AuthService {
         } catch (error) {
             throw logError('handleGoogleCallback', error, { email: googleUserData?.profile?.email });
         }
+    }
+
+    static async getAdminUsers({ role } = {}) {
+        const query = {};
+
+        if (role) {
+            // Optional: validate allowed roles
+            const allowedRoles = ['admin', 'operational'];
+            if (!allowedRoles.includes(role)) {
+                const err = new Error('Invalid role provided');
+                err.statusCode = 400;
+                throw err;
+            }
+            query.role = role;
+        }
+
+        // Optional: only active users
+        // query.isActive = true;
+
+        // Never return password hash to client
+        const admins = await User.find(query).select('-password');
+
+        return admins;
     }
 }
 

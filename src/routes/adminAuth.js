@@ -91,97 +91,10 @@ const adminAuthRoutes = {
             description: 'Google social authentication'
         },
         {
-            method: 'POST',
-            path: '/auth/social/apple',
-            middleware: [],
-            handler: authController.appleCallback,
-            description: 'Apple social authentication'
-        },
-        {
-            method: 'POST',
-            path: '/auth/social/meta',
-            middleware: [],
-            handler: authController.metaCallback,
-            description: 'Meta (Facebook) social authentication'
-        },
-
-        // Token Management
-        {
             method: 'GET',
-            path: '/auth/verify',
-            middleware: [],
-            handler: authController.verifyToken,
-            description: 'Verify authentication token'
-        },
-
-        // Email and Phone Verification
-        {
-            method: 'GET',
-            path: '/auth/verify-email/:token',
-            middleware: [],
-            handler: authController.verifyEmail,
-            description: 'Verify email with token'
-        },
-        {
-            method: 'POST',
-            path: '/auth/verify-phone',
-            middleware: [],
-            handler: authController.verifyPhone,
-            description: 'Verify phone number'
-        },
-        {
-            method: 'GET',
-            path: '/auth/resend-verification',
+            path: '/adminUsers',
             middleware: [authenticateToken],
-            handler: authController.resendVerification,
-            description: 'Resend verification email/SMS'
-        },
-        {
-            method: 'POST',
-            path: '/auth/updatePhoneVerify',
-            middleware: [authenticateToken],
-            handler: authController.updatePhoneVerify,
-            description: 'Update and verify phone number'
-        },
-
-        // OTP Login
-        {
-            method: 'POST',
-            path: '/auth/send-login-otp',
-            middleware: [],
-            handler: authController.sendLoginOTP,
-            description: 'Send OTP for login'
-        },
-        {
-            method: 'POST',
-            path: '/auth/verify-login-otp',
-            middleware: [],
-            handler: authController.verifyLoginOTP,
-            description: 'Verify login OTP'
-        },
-
-        // Account Deletion
-        {
-            method: 'POST',
-            path: '/auth/request-deletion',
-            middleware: [authenticateToken],
-            handler: authController.requestAccountDeletion,
-            description: 'Request account deletion'
-        },
-
-        // Verification Status Checks
-        {
-            method: 'GET',
-            path: '/auth/verify/email',
-            middleware: [authenticateToken],
-            handler: authController.checkEmailVerification,
-            description: 'Check email verification status'
-        },
-        {
-            method: 'GET',
-            path: '/auth/verify/email-and-phone',
-            middleware: [authenticateToken],
-            handler: authController.checkBothVerification,
+            handler: authController.adminUsers,
             description: 'Check both email and phone verification status'
         }
     ],

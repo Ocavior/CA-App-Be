@@ -47,6 +47,7 @@ const auth = {
         email: user.email,
         applicationCode: user.applicationCode,
         isActive: user.isActive,
+        role: user.role
       }
 
       // Store in context (this persists)
