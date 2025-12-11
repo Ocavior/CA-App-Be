@@ -44,6 +44,13 @@ const adminAuthRoutes = {
             handler: authController.deleteUserByAdmin,
             description: 'Delete users by admin'
         },
+        {
+            method: 'PUT',
+            path: '/auth/update-user',
+            middleware: [authenticateToken],
+            handler: authController.updateUser,
+            description: 'Update user by admin'
+        },
 
         // Password Management
         {
@@ -95,12 +102,12 @@ const adminAuthRoutes = {
             path: '/adminUsers',
             middleware: [authenticateToken],
             handler: authController.adminUsers,
-            description: 'Check both email and phone verification status'
+            description: 'Get all admin users with counts'
         }
     ],
 
     // Method to register all auth routes with the router
-    registerRoutes: function(router) {
+    registerRoutes: function (router) {
         this.routes.forEach(route => {
             const { method, path, middleware, handler } = route;
             if (middleware && middleware.length > 0) {

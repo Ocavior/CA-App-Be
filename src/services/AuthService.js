@@ -411,6 +411,150 @@ class AuthService {
         };
     }
 
+    // Add these methods to the AuthService class
+
+    /**
+     * Delete user account (self-deletion)
+     */
+    static async deleteUser(userId) {
+        try {
+            const user = await User.findById(userId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            await User.findByIdAndDelete(userId);
+
+            return {
+                success: true,
+                message: 'User account deleted successfully'
+            };
+        } catch (error) {
+            throw logError('deleteUser', error, { userId });
+        }
+    }
+
+    /**
+     * Delete user by admin
+     */
+    static async deleteUserByAdmin(targetUserId) {
+        try {
+            const user = await User.findById(targetUserId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            await User.findByIdAndDelete(targetUserId);
+
+            return {
+                success: true,
+                message: 'User deleted successfully'
+            };
+        } catch (error) {
+            throw logError('deleteUserByAdmin', error, { targetUserId });
+        }
+    }
+
+    /**
+     * Update user by admin
+     */
+    static async updateUser(targetUserId, updateData) {
+        try {
+            const user = await User.findById(targetUserId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            const { username, email, phoneNumber, role, password } = updateData;
+
+            // Build update object with only provided fields
+            const updates = {};
+
+            if (username !== undefined) {
+                const normalizedUsername = username.toLowerCase();
+
+                // Check if username is already taken by another user
+                const existingUser = await User.findOne({
+                    username: normalizedUsername,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Username already taken');
+                }
+
+                updates.username = normalizedUsername;
+            }
+
+            if (email !== undefined) {
+                const normalizedEmail = email.toLowerCase();
+
+                // Check if email is already taken by another user
+                const existingUser = await User.findOne({
+                    email: normalizedEmail,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Email already registered');
+                }
+
+                updates.email = normalizedEmail;
+            }
+
+            if (phoneNumber !== undefined) {
+                // Check if phone number is already taken by another user
+                const existingUser = await User.findOne({
+                    phoneNumber,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Phone number already registered');
+                }
+
+                updates.phoneNumber = phoneNumber;
+            }
+
+            if (role !== undefined) {
+                const allowedRoles = ['admin', 'operational'];
+                if (!allowedRoles.includes(role)) {
+                    throw new Error('Invalid role. Must be admin or operational');
+                }
+                updates.role = role;
+            }
+
+            if (password !== undefined) {
+                // Hash new password
+                const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+                const hashedPassword = await bcrypt.hash(password, salt);
+                updates.password = hashedPassword;
+            }
+
+            // Update user
+            const updatedUser = await User.findByIdAndUpdate(
+                targetUserId,
+                { $set: updates },
+                { new: true, runValidators: true }
+            ).select('-password');
+
+            return {
+                user: {
+                    _id: updatedUser._id,
+                    username: updatedUser.username,
+                    email: updatedUser.email,
+                    phoneNumber: updatedUser.phoneNumber,
+                    role: updatedUser.role
+                }
+            };
+        } catch (error) {
+            throw logError('updateUser', error, { targetUserId });
+        }
+    }
+
 }
 
 module.exports = AuthService;

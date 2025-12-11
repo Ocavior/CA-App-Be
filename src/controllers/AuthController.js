@@ -269,6 +269,179 @@ class AuthController {
         }
     };
 
+    // Add these methods to the AuthController class
+
+    deleteUser = async (request, context) => {
+        try {
+            const currentUser = context.user;
+            const userId = currentUser?._id;
+
+            // Check if user is authenticated
+            if (!userId) {
+                return {
+                    status: 401,
+                    jsonBody: {
+                        success: false,
+                        message: 'User not authenticated'
+                    }
+                };
+            }
+
+            await AuthService.deleteUser(userId);
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    message: 'User account deleted successfully'
+                }
+            };
+        } catch (error) {
+            const err = logError('deleteUser', error);
+            return {
+                status: 400,
+                jsonBody: {
+                    success: false,
+                    message: err.message
+                }
+            };
+        }
+    }
+
+    deleteUserByAdmin = async (request, context) => {
+        try {
+            const currentUser = context.user;
+            const userId = currentUser?._id;
+
+            // Check if user is authenticated
+            if (!userId) {
+                return {
+                    status: 401,
+                    jsonBody: {
+                        success: false,
+                        message: 'User not authenticated'
+                    }
+                };
+            }
+
+            // Only admins can delete other users
+            if (currentUser.role !== 'admin') {
+                return {
+                    status: 403,
+                    jsonBody: {
+                        success: false,
+                        message: 'Only admins can delete users'
+                    }
+                };
+            }
+
+            const body = (await request.json()) || {};
+            const { targetUserId } = body;
+
+            if (!targetUserId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        message: 'Target user ID is required'
+                    }
+                };
+            }
+
+            // Prevent admin from deleting themselves using this endpoint
+            if (targetUserId === userId.toString()) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        message: 'Use /auth endpoint to delete your own account'
+                    }
+                };
+            }
+
+            await AuthService.deleteUserByAdmin(targetUserId);
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    message: 'User deleted successfully'
+                }
+            };
+        } catch (error) {
+            const err = logError('deleteUserByAdmin', error);
+            return {
+                status: 400,
+                jsonBody: {
+                    success: false,
+                    message: err.message
+                }
+            };
+        }
+    }
+
+    updateUser = async (request, context) => {
+        try {
+            const currentUser = context.user;
+            const userId = currentUser?._id;
+
+            // Check if user is authenticated
+            if (!userId) {
+                return {
+                    status: 401,
+                    jsonBody: {
+                        success: false,
+                        message: 'User not authenticated'
+                    }
+                };
+            }
+
+            // Only admins can update users
+            if (currentUser.role !== 'admin') {
+                return {
+                    status: 403,
+                    jsonBody: {
+                        success: false,
+                        message: 'Only admins can update users'
+                    }
+                };
+            }
+
+            const body = (await request.json()) || {};
+            const { targetUserId, ...updateData } = body;
+
+            if (!targetUserId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        message: 'Target user ID is required'
+                    }
+                };
+            }
+
+            const responseData = await AuthService.updateUser(targetUserId, updateData);
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    data: responseData,
+                    message: 'User updated successfully'
+                }
+            };
+        } catch (error) {
+            const err = logError('updateUser', error);
+            return {
+                status: 400,
+                jsonBody: {
+                    success: false,
+                    message: err.message
+                }
+            };
+        }
+    }
+
 }
 
 module.exports = new AuthController();
