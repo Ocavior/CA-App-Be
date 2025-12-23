@@ -1,7 +1,7 @@
 const adminAuthRoutes = require('./adminAuth');
 const caSubmissionRoutes = require('./caSubmissionRoutes');
-
 const responseWrapper = require('../utils/responseWrapper');
+const notificationRoutes = require('./notifications');
 class Router {
     constructor() {
         this.routes = new Map();
@@ -12,6 +12,7 @@ class Router {
     setupRoutes() {
 
         adminAuthRoutes.registerRoutes(this);
+        notificationRoutes.registerRoutes(this);
         caSubmissionRoutes.registerRoutes(this);
         // Health check
         this.addRoute('GET', '/health-check', this.healthCheck);
