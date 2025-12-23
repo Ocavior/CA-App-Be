@@ -11,6 +11,13 @@ const notificationRoutes = {
             middleware: [authenticateToken],
             handler: NotificationController.sendBulkWhatsapp,
             description: 'Send bulk WhatsApp messages via external service'
+        },
+        {
+            method: 'POST',
+            path: '/notifications/email/bulk',
+            middleware: [authenticateToken],
+            handler: NotificationController.sendBulkEmail,
+            description: 'Send bulk emails using simple message template'
         }
 
     ],

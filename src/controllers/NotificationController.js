@@ -1,6 +1,6 @@
 // controllers/NotificationController.js
 const axios = require('axios');
-
+const { EmailApiService } = require('../services/EmailApiService');
 const WHATSAPP_BULK_API =
   'https://whatsapp-inbox.happyriver-1999a58f.southindia.azurecontainerapps.io/api/bulk/send';
 
@@ -104,6 +104,41 @@ async function sendBulkWhatsapp(request, context) {
   }
 }
 
+
+async function sendBulkEmail(request, context) {
+    try {
+        const payload = (await request.json()) || {};
+        const { emails, subject, message, from } = payload;
+
+        const result = await EmailApiService.sendBulkSimpleEmails({
+            emails,
+            subject,
+            message,
+            from
+        });
+
+        return {
+            status: 200,
+            jsonBody: {
+                success: true,
+                message: 'Bulk email process completed',
+                data: result
+            }
+        };
+    } catch (err) {
+        context.error('Bulk email error:', err);
+
+        return {
+            status: 400,
+            jsonBody: {
+                success: false,
+                message: err.message || 'Failed to send bulk emails'
+            }
+        };
+    }
+}
+
 module.exports = {
-  sendBulkWhatsapp
+  sendBulkWhatsapp,
+  sendBulkEmail
 };
