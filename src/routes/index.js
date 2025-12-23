@@ -502,7 +502,7 @@ class Router {
             console.log(`Request query:`, request.query);
             console.log(`Request files:`, request.files ? Object.keys(request.files) : 'none');
             console.log(`Request body:`, request.body);
-
+            console.log("handler", handler);
             // Execute middleware and handler
             if (Array.isArray(handler)) {
                 // Handle middleware chain

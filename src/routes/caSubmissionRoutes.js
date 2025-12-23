@@ -120,6 +120,13 @@ const caSubmissionRoutes = {
       },
       description: 'Health check endpoint (no authentication required)'
     },
+    {
+      method: 'POST',
+      path: '/ca/validate-contacts',
+      middleware: [authenticateToken],
+      handler: CaSubmissionController.validateCaContacts,
+      description: 'Validate CA email or WhatsApp number by CA IDs'
+    }
     
   ],
   

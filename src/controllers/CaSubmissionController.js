@@ -2,6 +2,9 @@
 const { importFromExcel, createCaSubmission, updateCaSubmission } = require('../services/CaSubmissionImportService');
 const CaSubmission = require('../models/caData');
 const { SERVICES } = require('../models/caData');
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mongoose = require('mongoose');
+const PHONE_REGEX = /^\+?[1-9]\d{9,14}$/;
 /**
  * Import Excel file with CA submissions
  * POST /ca/import
@@ -848,6 +851,110 @@ async function toggleActiveStatus(request, context) {
   }
 }
 
+async function validateCaContacts(request, context) {
+  try {
+    const payload = (await request.json()) || {};
+    const { ids, validationType } = payload;
+
+    // ---------- Validation ----------
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'ids must be a non-empty array'
+        }
+      };
+    }
+
+    if (!['email', 'whatsapp'].includes(validationType)) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'validationType must be either email or whatsapp'
+        }
+      };
+    }
+
+    const validIds = ids.filter(id =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
+
+    if (validIds.length === 0) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'No valid CA IDs provided'
+        }
+      };
+    }
+
+    // ---------- Fetch CAs ----------
+    const cas = await CaSubmission.find(
+      { _id: { $in: validIds } },
+      'name email newEmail whatsappNumber mobile'
+    ).lean();
+
+    // ---------- Validation Logic ----------
+    const results = cas.map(ca => {
+      let value = null;
+      let isValid = false;
+
+      if (validationType === 'email') {
+        value = ca.email || ca.newEmail || null;
+        isValid = value ? EMAIL_REGEX.test(value) : false;
+      }
+
+      if (validationType === 'whatsapp') {
+        value = ca.whatsappNumber || ca.mobile || null;
+        isValid = value ? PHONE_REGEX.test(value) : false;
+      }
+
+      return {
+        id: ca._id,
+        name: ca.name,
+        value,
+        status: value
+          ? (isValid ? 'valid' : 'invalid')
+          : 'missing'
+      };
+    });
+
+    // ---------- Summary ----------
+    const summary = {
+      total: results.length,
+      valid: results.filter(r => r.status === 'valid').length,
+      invalid: results.filter(r => r.status === 'invalid').length,
+      missing: results.filter(r => r.status === 'missing').length
+    };
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        validationType,
+        summary,
+        data: results
+      }
+    };
+  } catch (err) {
+    context.error('Validate CA contacts error:', err);
+
+    return {
+      status: err.name === 'CastError' ? 400 : 500,
+      jsonBody: {
+        success: false,
+        message:
+          err.name === 'CastError'
+            ? 'Invalid CA ID'
+            : 'Failed to validate CA contacts'
+      }
+    };
+  }
+}
+
 module.exports = {
   importExcel,
   getSubmissions,
@@ -860,5 +967,6 @@ module.exports = {
   createSubmission,
   updateSubmission,
   bulkDelete,
-  toggleActiveStatus
+  toggleActiveStatus,
+  validateCaContacts
 };
