@@ -76,9 +76,9 @@ async function getConversationMessages(request, context) {
     }
 
     const url = new URL(request.url);
-    const limit = url.searchParams.get('limit') || '100';
-    const skip = url.searchParams.get('skip') || '0';
-    const days = url.searchParams.get('days') || '0';
+    const limit = url.searchParams.get('limit') || 100;
+    const skip = url.searchParams.get('skip') || 0;
+    const days = url.searchParams.get('days');
 
     // -------- External API Call --------
     let response;
