@@ -7,6 +7,13 @@ const notificationRoutes = {
         // Registration and User Creation
         {
             method: 'POST',
+            path: '/messages/send',
+            middleware: [authenticateToken],
+            handler: NotificationController.sendWhatsappMessage,
+            description: 'Send a single WhatsApp message (text, media, or template)'
+        },
+        {
+            method: 'POST',
             path: '/notifications/whatsapp/bulk',
             middleware: [authenticateToken],
             handler: NotificationController.sendBulkWhatsapp,
