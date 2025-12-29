@@ -2,50 +2,47 @@
 const axios = require('axios');
 const { EmailApiService } = require('../services/EmailApiService');
 
-const WHATSAPP_API_BASE = 'https://whatsapp-inbox.happyriver-1999a58f.southindia.azurecontainerapps.io/api';
-const WHATSAPP_BULK_API = `${WHATSAPP_API_BASE}/bulk/send`;
-const WHATSAPP_SEND_API = `${WHATSAPP_API_BASE}/messages/send`;
+const WHATSAPP_API_BASE = 'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
+const WHATSAPP_BULK_API = `${WHATSAPP_API_BASE}/send/bulk`;
+const WHATSAPP_SEND_TEXT_API = `${WHATSAPP_API_BASE}/send/text`;
 
 async function sendBulkWhatsapp(request, context) {
   try {
     const payload = (await request.json()) || {};
-    const { message_template, contacts, delay = 1 } = payload;
+    const { text, recipients, delay_seconds = 1 } = payload;
 
     // -------- Validation --------
-    if (!message_template || typeof message_template !== 'string') {
+    if (!text || typeof text !== 'string') {
       return {
         status: 400,
         jsonBody: {
           success: false,
-          message: 'message_template is required'
+          message: 'text is required'
         }
       };
     }
 
-    if (!Array.isArray(contacts) || contacts.length === 0) {
+    if (!Array.isArray(recipients) || recipients.length === 0) {
       return {
         status: 400,
         jsonBody: {
           success: false,
-          message: 'contacts must be a non-empty array'
+          message: 'recipients must be a non-empty array'
         }
       };
     }
 
-    // Basic contact validation
-    const formattedContacts = contacts
-      .filter(c => c.phone)
-      .map(c => ({
-        phone: String(c.phone),
-        name: c.name || ''
-      }));
+    // Format recipients as strings
+    const formattedRecipients = recipients
+      .filter(r => r)
+      .map(r => String(r));
 
-    if (formattedContacts.length === 0) {
+    if (formattedRecipients.length === 0) {
       return {
         status: 400,
         jsonBody: {
           success: false,
-          message: 'No valid contacts with phone numbers found'
+          message: 'No valid recipients found'
         }
       };
     }
@@ -56,9 +53,9 @@ async function sendBulkWhatsapp(request, context) {
       response = await axios.post(
         WHATSAPP_BULK_API,
         {
-          message_template,
-          contacts: formattedContacts,
-          delay
+          recipients: formattedRecipients,
+          text,
+          delay_seconds
         },
         {
           headers: {
@@ -109,14 +106,7 @@ async function sendBulkWhatsapp(request, context) {
 async function sendWhatsappMessage(request, context) {
   try {
     const payload = (await request.json()) || {};
-    const {
-      to,
-      message,
-      message_type = 'text',
-      media_url,
-      template_name,
-      template_params
-    } = payload;
+    const { to, text, user_name } = payload;
 
     // -------- Validation --------
     if (!to) {
@@ -129,67 +119,28 @@ async function sendWhatsappMessage(request, context) {
       };
     }
 
-    // Validate message_type
-    const validMessageTypes = ['text', 'image', 'video', 'document', 'audio', 'template'];
-    if (message_type && !validMessageTypes.includes(message_type)) {
+    if (!text) {
       return {
         status: 400,
         jsonBody: {
           success: false,
-          message: `message_type must be one of: ${validMessageTypes.join(', ')}`
+          message: 'text is required'
         }
       };
-    }
-
-    // Validate based on message type
-    if (message_type === 'template') {
-      if (!template_name) {
-        return {
-          status: 400,
-          jsonBody: {
-            success: false,
-            message: 'template_name is required when message_type is template'
-          }
-        };
-      }
-    } else if (message_type === 'text') {
-      if (!message) {
-        return {
-          status: 400,
-          jsonBody: {
-            success: false,
-            message: 'message is required when message_type is text'
-          }
-        };
-      }
-    } else if (['image', 'video', 'document', 'audio'].includes(message_type)) {
-      if (!media_url) {
-        return {
-          status: 400,
-          jsonBody: {
-            success: false,
-            message: `media_url is required when message_type is ${message_type}`
-          }
-        };
-      }
     }
 
     // Build request body
     const requestBody = {
       to: String(to),
-      message_type
+      text,
+      user_name: user_name || ''
     };
-
-    if (message) requestBody.message = message;
-    if (media_url) requestBody.media_url = media_url;
-    if (template_name) requestBody.template_name = template_name;
-    if (template_params) requestBody.template_params = template_params;
 
     // -------- External API Call --------
     let response;
     try {
       response = await axios.post(
-        WHATSAPP_SEND_API,
+        WHATSAPP_SEND_TEXT_API,
         requestBody,
         {
           headers: {
