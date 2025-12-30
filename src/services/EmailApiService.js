@@ -21,6 +21,7 @@ class EmailApiService {
                 htmlTemplate,
                 textTemplate,
                 from,
+                emailMessage,
                 cc = null,
                 bcc = null,
                 attachments = null,
@@ -42,6 +43,7 @@ class EmailApiService {
                 textTemplate,
                 from,
                 emailCredentials,
+                emailMessage,
                 appCode: process.env.APP_CODE
             };
 
@@ -104,7 +106,8 @@ class EmailApiService {
                 </div>
             `,
             textTemplate: `${message}\n\n© ${new Date().getFullYear()} ActoFit`,
-            from
+            from,
+            emailMessage: message
         });
 
         result.sent++;
@@ -123,7 +126,8 @@ class EmailApiService {
                         </div>
                     `,
                     textTemplate: `${message}\n\n© ${new Date().getFullYear()} ActoFit`,
-                    from
+                    from,
+                    emailMessage: message
                 });
 
                 result.sent++;
