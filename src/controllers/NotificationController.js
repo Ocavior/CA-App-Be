@@ -236,10 +236,31 @@ async function getEmailLogs(request, context) {
 
     const logs = await EmailApiService.getEmailLogs(filters);
 
-    // Return the API response directly (it already has success, message, data structure)
+    // Format response to include only specific fields
+    const formattedItems = logs.data.items.map(item => ({
+      _id: item._id,
+      appCode: item.appCode,
+      emailMessage: item.emailMessage,
+      recipients: item.recipients,
+      subject: item.subject,
+      status: item.status,
+      emailDetails: item.emailDetails,
+      createdAt: item.createdAt
+    }));
+
     return {
       status: 200,
-      jsonBody: logs
+      jsonBody: {
+        success: true,
+        message: 'Email logs retrieved successfully',
+        data: {
+          items: formattedItems,
+          page: logs.data.page,
+          limit: logs.data.limit,
+          total: logs.data.total,
+          hasMore: logs.data.hasMore
+        }
+      }
     };
   } catch (err) {
     context.error('Get email logs error:', err);
