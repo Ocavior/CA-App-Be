@@ -221,8 +221,45 @@ async function sendBulkEmail(request, context) {
   }
 }
 
+async function getEmailLogs(request, context) {
+  try {
+    // Get query parameters if any filters are passed
+    const url = new URL(request.url);
+    const filters = {};
+    
+    // Extract any additional query parameters as filters
+    url.searchParams.forEach((value, key) => {
+      if (key !== 'appCode') { // appCode is already handled in the service
+        filters[key] = value;
+      }
+    });
+
+    const logs = await EmailApiService.getEmailLogs(filters);
+
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: 'Email logs retrieved successfully',
+        data: logs
+      }
+    };
+  } catch (err) {
+    context.error('Get email logs error:', err);
+
+    return {
+      status: 400,
+      jsonBody: {
+        success: false,
+        message: err.message || 'Failed to retrieve email logs'
+      }
+    };
+  }
+}
+
 module.exports = {
   sendBulkWhatsapp,
   sendWhatsappMessage,
-  sendBulkEmail
+  sendBulkEmail,
+  getEmailLogs
 };

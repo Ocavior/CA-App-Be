@@ -3,6 +3,7 @@ const axios = require('axios');
 class EmailApiService {
     static emailConfig = {
         apiUrl: process.env.EMAIL_SERVICE_URL,
+        apiBaseUrl: process.env.EMAIL_SERVICE_BASE_URL,
         defaultCredentials: {
             service: 'gmail',
             user: process.env.EMAIL_USER,
@@ -136,6 +137,39 @@ class EmailApiService {
         }
 
         return result;
+    }
+
+    static async getEmailLogs(filters = {}) {
+        try {
+            const params = {
+                appCode: process.env.APP_CODE,
+                ...filters
+            };
+
+            const response = await axios.get(
+                `${EmailApiService.emailConfig.apiBaseUrl}/emailLogs`,
+                {
+                    params,
+                    timeout: EmailApiService.emailConfig.timeout,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json'
+                    }
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            if (error.response) {
+                throw new Error(
+                    error.response.data?.message || 'Failed to fetch email logs'
+                );
+            }
+            if (error.request) {
+                throw new Error('Email service not responding');
+            }
+            throw error;
+        }
     }
 }
 
