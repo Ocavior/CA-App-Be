@@ -28,7 +28,7 @@ const notificationRoutes = {
         },
         {
             method: 'GET',
-            path: '/email-logs',
+            path: '/emailLogs',
             middleware: [authenticateToken],
             handler: NotificationController.getEmailLogs,
             description: 'Send bulk WhatsApp messages via external service'
