@@ -236,13 +236,10 @@ async function getEmailLogs(request, context) {
 
     const logs = await EmailApiService.getEmailLogs(filters);
 
+    // Return the API response directly (it already has success, message, data structure)
     return {
       status: 200,
-      jsonBody: {
-        success: true,
-        message: 'Email logs retrieved successfully',
-        data: logs
-      }
+      jsonBody: logs
     };
   } catch (err) {
     context.error('Get email logs error:', err);
