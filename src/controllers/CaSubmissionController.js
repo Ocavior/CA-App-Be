@@ -290,16 +290,56 @@ async function getSubmissionById(request, context) {
 async function searchSubmissions(request, context) {
   try {
     const query = request.query || {};
-    const searchQuery = query.q;
+    const searchQuery = query.q?.trim();
+    const state = query.state?.trim();
+    const city = query.city?.trim();
+    const services = query.services?.trim();
+    const startDate = query.startDate;
+    const endDate = query.endDate;
+    const isActive = query.isActive;
 
-    if (!searchQuery || !searchQuery.trim()) {
-      return {
-        status: 400,
-        jsonBody: {
-          success: false,
-          message: 'Search query (q) is required'
-        }
-      };
+    // Build the filter
+    const filter = {};
+
+    if (searchQuery) {
+      filter.$text = { $search: searchQuery };
+    }
+
+    if (state) {
+      filter.state = { $regex: new RegExp(state, 'i') };
+    }
+
+    if (city) {
+      filter.city = { $regex: new RegExp(city, 'i') };
+    }
+
+    if (services) {
+      const serviceKeys = services.split(',').map(s => s.trim());
+      const validServiceKeys = serviceKeys.filter(key => 
+        Object.keys(CaSubmission.schema.paths.services.schema.paths).includes(key)
+      );
+
+      if (validServiceKeys.length > 0) {
+        filter.$and = validServiceKeys.map(key => ({
+          [`services.${key}.offered`]: true
+        }));
+      }
+    }
+
+    if (startDate || endDate) {
+      filter.timestamp = {};
+      if (startDate) {
+        filter.timestamp.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        filter.timestamp.$lte = endDateTime;
+      }
+    }
+
+    if (isActive !== undefined) {
+      filter.isActive = isActive === 'true' || isActive === true;
     }
 
     // Pagination
@@ -307,21 +347,44 @@ async function searchSubmissions(request, context) {
     const limit = Math.min(parseInt(query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
-    // Text search
-    const [submissions, totalCount] = await Promise.all([
-      CaSubmission.find(
-        { $text: { $search: searchQuery } },
-        { score: { $meta: 'textScore' } }
-      )
-        .select('-rawData')
-        .sort({ score: { $meta: 'textScore' } })
+    // Projection and sort
+    const projection = searchQuery 
+      ? { score: { $meta: 'textScore' }, rawData: 0 }
+      : { rawData: 0 };
+
+    const sort = searchQuery 
+      ? { score: { $meta: 'textScore' }, timestamp: -1 }
+      : { timestamp: -1 };
+
+    // Optimize: Only count on first page, estimate for other pages
+    let totalCount;
+    
+    if (skip === 0) {
+      // First page: get exact count
+      [submissions, totalCount] = await Promise.all([
+        CaSubmission.find(filter, projection)
+          .sort(sort)
+          .limit(limit)
+          .lean(),
+        CaSubmission.countDocuments(filter)
+      ]);
+    } else {
+      // Other pages: skip the count for better performance
+      // You can cache the count or use estimatedDocumentCount
+      submissions = await CaSubmission.find(filter, projection)
+        .sort(sort)
         .skip(skip)
         .limit(limit)
-        .lean(),
-      CaSubmission.countDocuments({ $text: { $search: searchQuery } })
-    ]);
+        .lean();
+      
+      // Option 1: Don't provide exact count (set to null)
+      totalCount = null;
+      
+      // Option 2: Estimate based on results
+      // totalCount = skip + submissions.length + (submissions.length === limit ? limit : 0);
+    }
 
-    const totalPages = Math.ceil(totalCount / limit);
+    const totalPages = totalCount ? Math.ceil(totalCount / limit) : null;
 
     return {
       status: 200,
@@ -333,17 +396,38 @@ async function searchSubmissions(request, context) {
           totalPages,
           totalCount,
           limit,
-          hasNextPage: page < totalPages,
+          hasNextPage: submissions.length === limit, // Has more if we got full page
           hasPrevPage: page > 1
         },
-        search: {
-          query: searchQuery
-        }
+        filters: {
+          searchQuery: searchQuery || null,
+          state: state || null,
+          city: city || null,
+          services: services ? services.split(',').map(s => s.trim()) : null,
+          dateRange: {
+            start: startDate || null,
+            end: endDate || null
+          },
+          isActive: isActive !== undefined ? (isActive === 'true' || isActive === true) : null
+        },
+        resultsCount: submissions.length
       }
     };
 
   } catch (err) {
     context.error('Search submissions error:', err);
+    
+    if (err.name === 'CastError') {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'Invalid filter parameters',
+          error: err.message
+        }
+      };
+    }
+
     return {
       status: 500,
       jsonBody: {
@@ -354,6 +438,8 @@ async function searchSubmissions(request, context) {
     };
   }
 }
+
+module.exports = searchSubmissions;
 
 /**
  * Get aggregated statistics
