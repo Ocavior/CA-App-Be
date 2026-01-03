@@ -290,27 +290,67 @@ async function getSubmissionById(request, context) {
 async function searchSubmissions(request, context) {
   try {
     const query = request.query || {};
-    const searchQuery = query.q?.trim();
-    const state = query.state?.trim();
-    const city = query.city?.trim();
-    const services = query.services?.trim();
+    
+    // Helper function to safely decode URL parameters
+    const decodeParam = (param) => {
+      if (!param) return param;
+      try {
+        return decodeURIComponent(param.trim());
+      } catch (e) {
+        context.warn('Failed to decode parameter:', param, e);
+        return param.trim();
+      }
+    };
+    
+    // Helper function to escape special regex characters
+    const escapeRegex = (str) => {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+    
+    // Decode all query parameters
+    const searchQuery = decodeParam(query.q);
+    const state = decodeParam(query.state);
+    const city = decodeParam(query.city);
+    const services = decodeParam(query.services);
     const startDate = query.startDate;
     const endDate = query.endDate;
     const isActive = query.isActive;
-
+    
+    console.log("new query: ", searchQuery);
+    
     // Build the filter
     const filter = {};
 
     if (searchQuery) {
-      filter.$text = { $search: searchQuery };
+      // Use regex for partial matching across multiple fields
+      // Escape special regex characters to prevent injection
+      const escapedQuery = escapeRegex(searchQuery);
+      const searchRegex = new RegExp(escapedQuery, 'i');
+      
+      // Search across multiple fields - adjust these field names based on your schema
+      filter.$or = [
+        { name: searchRegex },
+        { description: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { address: searchRegex },
+        { city: searchRegex },
+        { state: searchRegex },
+        { zipCode: searchRegex },
+        { contactPerson: searchRegex },
+        { businessName: searchRegex },
+        // Add other relevant text fields from your schema
+      ];
     }
 
     if (state) {
-      filter.state = { $regex: new RegExp(state, 'i') };
+      const stateRegex = new RegExp(escapeRegex(state), 'i');
+      filter.state = stateRegex;
     }
 
     if (city) {
-      filter.city = { $regex: new RegExp(city, 'i') };
+      const cityRegex = new RegExp(escapeRegex(city), 'i');
+      filter.city = cityRegex;
     }
 
     if (services) {
@@ -347,17 +387,13 @@ async function searchSubmissions(request, context) {
     const limit = Math.min(parseInt(query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
-    // Projection and sort
-    const projection = searchQuery 
-      ? { score: { $meta: 'textScore' }, rawData: 0 }
-      : { rawData: 0 };
-
-    const sort = searchQuery 
-      ? { score: { $meta: 'textScore' }, timestamp: -1 }
-      : { timestamp: -1 };
+    // Projection and sort - removed textScore since we're not using $text anymore
+    const projection = { rawData: 0 };
+    const sort = { timestamp: -1 };
 
     // Optimize: Only count on first page, estimate for other pages
     let totalCount;
+    let submissions;
     
     if (skip === 0) {
       // First page: get exact count
@@ -370,18 +406,13 @@ async function searchSubmissions(request, context) {
       ]);
     } else {
       // Other pages: skip the count for better performance
-      // You can cache the count or use estimatedDocumentCount
       submissions = await CaSubmission.find(filter, projection)
         .sort(sort)
         .skip(skip)
         .limit(limit)
         .lean();
       
-      // Option 1: Don't provide exact count (set to null)
       totalCount = null;
-      
-      // Option 2: Estimate based on results
-      // totalCount = skip + submissions.length + (submissions.length === limit ? limit : 0);
     }
 
     const totalPages = totalCount ? Math.ceil(totalCount / limit) : null;
@@ -396,7 +427,7 @@ async function searchSubmissions(request, context) {
           totalPages,
           totalCount,
           limit,
-          hasNextPage: submissions.length === limit, // Has more if we got full page
+          hasNextPage: submissions.length === limit,
           hasPrevPage: page > 1
         },
         filters: {
