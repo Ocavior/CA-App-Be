@@ -353,14 +353,12 @@ async function searchSubmissions(request, context) {
       filter.city = cityRegex;
     }
 
+      console.log('services: ', services);
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
-      const validServiceKeys = serviceKeys.filter(key => 
-        Object.keys(CaSubmission.schema.paths.services.schema.paths).includes(key)
-      );
-
-      if (validServiceKeys.length > 0) {
-        filter.$and = validServiceKeys.map(key => ({
+      
+      if (serviceKeys.length > 0) {
+        filter.$and = serviceKeys.map(key => ({
           [`services.${key}.offered`]: true
         }));
       }
