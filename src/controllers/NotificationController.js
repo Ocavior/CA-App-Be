@@ -275,9 +275,211 @@ async function getEmailLogs(request, context) {
   }
 }
 
+async function sendWhatsappTemplate(request, context) {
+  try {
+    const payload = (await request.json()) || {};
+    const { to, name, language = 'en_US', bodyParams, user_name } = payload;
+
+    // -------- Validation --------
+    if (!to) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'to (phone number) is required'
+        }
+      };
+    }
+
+    if (!name) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'name (template name) is required'
+        }
+      };
+    }
+
+    if (bodyParams && !Array.isArray(bodyParams)) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'bodyParams must be an array'
+        }
+      };
+    }
+
+    // Build request body
+    const requestBody = {
+      to: String(to),
+      name,
+      language,
+      bodyParams: bodyParams || [],
+      user_name: user_name || ''
+    };
+
+    // -------- External API Call --------
+    let response;
+    try {
+      response = await axios.post(
+        WHATSAPP_SEND_TEMPLATE_API,
+        requestBody,
+        {
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        }
+      );
+    } catch (apiError) {
+      context.error(
+        'WhatsApp template API failed:',
+        apiError.response?.data || apiError.message
+      );
+
+      return {
+        status: apiError.response?.status || 502,
+        jsonBody: {
+          success: false,
+          message: 'WhatsApp template send failed',
+          error: apiError.response?.data || 'External API error'
+        }
+      };
+    }
+
+    // -------- Success --------
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: 'WhatsApp template message sent successfully',
+        data: response.data
+      }
+    };
+  } catch (err) {
+    context.error('Send WhatsApp template error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to send WhatsApp template message'
+      }
+    };
+  }
+}
+
+async function sendBulkWhatsappTemplate(request, context) {
+  try {
+    const payload = (await request.json()) || {};
+    const { recipients, name, language = 'en_US', delay_seconds = 1 } = payload;
+
+    // -------- Validation --------
+    if (!name || typeof name !== 'string') {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'name (template name) is required'
+        }
+      };
+    }
+
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'recipients must be a non-empty array'
+        }
+      };
+    }
+
+    // Validate and format recipients
+    const formattedRecipients = recipients
+      .filter(r => r && r.phone)
+      .map(r => ({
+        phone: String(r.phone),
+        user_name: r.user_name || '',
+        bodyParams: Array.isArray(r.bodyParams) ? r.bodyParams : []
+      }));
+
+    if (formattedRecipients.length === 0) {
+      return {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'No valid recipients found (each recipient must have a phone number)'
+        }
+      };
+    }
+
+    // Build request body
+    const requestBody = {
+      recipients: formattedRecipients,
+      name,
+      language,
+      delay_seconds
+    };
+
+    // -------- External API Call --------
+    let response;
+    try {
+      response = await axios.post(
+        WHATSAPP_BULK_TEMPLATE_API,
+        requestBody,
+        {
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000 // Increased timeout for bulk operations
+        }
+      );
+    } catch (apiError) {
+      context.error(
+        'WhatsApp bulk template API failed:',
+        apiError.response?.data || apiError.message
+      );
+
+      return {
+        status: apiError.response?.status || 502,
+        jsonBody: {
+          success: false,
+          message: 'WhatsApp bulk template send failed',
+          error: apiError.response?.data || 'External API error'
+        }
+      };
+    }
+
+    // -------- Success --------
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        message: 'WhatsApp template messages sent successfully',
+        data: response.data
+      }
+    };
+  } catch (err) {
+    context.error('Send bulk WhatsApp template error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to send bulk WhatsApp template messages'
+      }
+    };
+  }
+}
+
 module.exports = {
   sendBulkWhatsapp,
   sendWhatsappMessage,
   sendBulkEmail,
-  getEmailLogs
+  getEmailLogs,
+  sendWhatsappTemplate,
+  sendBulkWhatsappTemplate
 };
