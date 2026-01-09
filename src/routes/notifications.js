@@ -21,7 +21,7 @@ const notificationRoutes = {
         },
         {
             method: 'POST',
-            path: '/messages/send-bulk-template',
+            path: '/messages/sendBulkTemplate',
             middleware: [authenticateToken],
             handler: NotificationController.sendBulkWhatsappTemplate,
             description: 'Send bulk WhatsApp template'
