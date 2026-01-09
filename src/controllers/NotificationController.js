@@ -280,7 +280,7 @@ async function getEmailLogs(request, context) {
 async function sendWhatsappTemplate(request, context) {
   try {
     const payload = (await request.json()) || {};
-    const { to, name, language = 'en_US', bodyParams, user_name } = payload;
+    const { to, name, language = 'en', bodyParams, user_name } = payload;
 
     // -------- Validation --------
     if (!to) {
@@ -376,7 +376,7 @@ async function sendWhatsappTemplate(request, context) {
 async function sendBulkWhatsappTemplate(request, context) {
   try {
     const payload = (await request.json()) || {};
-    const { recipients, name, language = 'en_US', delay_seconds = 1 } = payload;
+    const { recipients, name, language = 'en', delay_seconds = 1 } = payload;
 
     // -------- Validation --------
     if (!name || typeof name !== 'string') {

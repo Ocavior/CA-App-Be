@@ -14,7 +14,7 @@ const notificationRoutes = {
         },
         {
             method: 'POST',
-            path: '/messages/send-template',
+            path: '/messages/sendTemplate',
             middleware: [authenticateToken],
             handler: NotificationController.sendWhatsappTemplate,
             description: 'Send a single WhatsApp template'
