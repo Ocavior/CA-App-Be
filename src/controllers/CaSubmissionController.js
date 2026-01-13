@@ -290,7 +290,7 @@ async function getSubmissionById(request, context) {
 async function searchSubmissions(request, context) {
   try {
     const query = request.query || {};
-    
+
     // Helper function to safely decode URL parameters
     const decodeParam = (param) => {
       if (!param) return param;
@@ -301,12 +301,12 @@ async function searchSubmissions(request, context) {
         return param.trim();
       }
     };
-    
+
     // Helper function to escape special regex characters
     const escapeRegex = (str) => {
       return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
-    
+
     // Decode all query parameters
     const searchQuery = decodeParam(query.q);
     const state = decodeParam(query.state);
@@ -315,32 +315,62 @@ async function searchSubmissions(request, context) {
     const startDate = query.startDate;
     const endDate = query.endDate;
     const isActive = query.isActive;
-    
+
     console.log("new query: ", searchQuery);
-    
+
     // Build the filter
     const filter = {};
 
     if (searchQuery) {
       // Use regex for partial matching across multiple fields
-      // Escape special regex characters to prevent injection
       const escapedQuery = escapeRegex(searchQuery);
       const searchRegex = new RegExp(escapedQuery, 'i');
-      
-      // Search across multiple fields - adjust these field names based on your schema
-      filter.$or = [
+
+      // All service keys from your model
+      const serviceKeys = [
+        'incomeTax', 'gstLaw', 'companyLaw', 'internationalTax', 'startup',
+        'accounting', 'investmentSuccession', 'registration', 'audits',
+        'femaFcra', 'pmlaBenami', 'nbfc', 'gemPortal', 'forensic', 'ibc',
+        'valuation', 'indAs', 'virtualCxo', 'competitionAct', 'ipo', 'sez',
+        'foreignAccounting', 'govtSubsidies'
+      ];
+
+      // Build the $or array with all searchable fields
+      const orConditions = [
         { name: searchRegex },
-        { description: searchRegex },
         { email: searchRegex },
-        { phone: searchRegex },
-        { address: searchRegex },
+        { newEmail: searchRegex },
+        { mobile: searchRegex },
+        { whatsappNumber: searchRegex },
         { city: searchRegex },
         { state: searchRegex },
-        { zipCode: searchRegex },
-        { contactPerson: searchRegex },
-        { businessName: searchRegex },
-        // Add other relevant text fields from your schema
+        { remarks: searchRegex },
+        { otherServices: searchRegex },
+        { employer: searchRegex },
+        { formFiledBy: searchRegex },
+        { projectHelpDetails: searchRegex },
+        { foreignWhichCountry: searchRegex },
+        { govtSubsidiesWhichState: searchRegex },
       ];
+
+      // Add search conditions for all service details fields
+      serviceKeys.forEach(serviceKey => {
+        orConditions.push({
+          [`services.${serviceKey}.details`]: searchRegex
+        });
+      });
+
+      // Also search in top3Services array
+      orConditions.push({
+        top3Services: { $elemMatch: { $regex: escapedQuery, $options: 'i' } }
+      });
+
+      // Also search in otherBranches array
+      orConditions.push({
+        otherBranches: { $elemMatch: { $regex: escapedQuery, $options: 'i' } }
+      });
+
+      filter.$or = orConditions;
     }
 
     if (state) {
@@ -353,10 +383,8 @@ async function searchSubmissions(request, context) {
       filter.city = cityRegex;
     }
 
-      console.log('services: ', services);
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
-      
       if (serviceKeys.length > 0) {
         filter.$and = serviceKeys.map(key => ({
           [`services.${key}.offered`]: true
@@ -385,14 +413,14 @@ async function searchSubmissions(request, context) {
     const limit = Math.min(parseInt(query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
-    // Projection and sort - removed textScore since we're not using $text anymore
+    // Projection and sort
     const projection = { rawData: 0 };
     const sort = { timestamp: -1 };
 
     // Optimize: Only count on first page, estimate for other pages
     let totalCount;
     let submissions;
-    
+
     if (skip === 0) {
       // First page: get exact count
       [submissions, totalCount] = await Promise.all([
@@ -409,7 +437,6 @@ async function searchSubmissions(request, context) {
         .skip(skip)
         .limit(limit)
         .lean();
-      
       totalCount = null;
     }
 
@@ -442,10 +469,9 @@ async function searchSubmissions(request, context) {
         resultsCount: submissions.length
       }
     };
-
   } catch (err) {
     context.error('Search submissions error:', err);
-    
+
     if (err.name === 'CastError') {
       return {
         status: 400,
@@ -467,8 +493,6 @@ async function searchSubmissions(request, context) {
     };
   }
 }
-
-module.exports = searchSubmissions;
 
 /**
  * Get aggregated statistics
