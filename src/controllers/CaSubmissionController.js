@@ -279,14 +279,6 @@ async function getSubmissionById(request, context) {
   }
 }
 
-/**
- * Search CA submissions using text search
- * GET /ca/search
- * Query params:
- *   - q: search query (required)
- *   - page: page number (default: 1)
- *   - limit: items per page (default: 10, max: 100)
- */
 async function searchSubmissions(request, context) {
   try {
     const query = request.query || {};
@@ -307,6 +299,32 @@ async function searchSubmissions(request, context) {
       return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
 
+    // Helper function to create fuzzy search patterns
+    const createFuzzyPattern = (searchTerm) => {
+      if (!searchTerm) return null;
+      
+      // Escape the search term first
+      const escaped = escapeRegex(searchTerm);
+      
+      // Create variations:
+      // 1. Original term
+      // 2. Replace spaces/hyphens/dots with optional space/hyphen/dot pattern
+      // Example: "startup" matches "start-up", "start up", "startup"
+      // Example: "gst" matches "g.s.t", "g s t", "gst"
+      
+      // Replace any sequence of non-alphanumeric chars with a pattern that matches space, hyphen, or dot
+      const fuzzyPattern = escaped
+        .split('')
+        .join('[\\s\\-\\.]*'); // Allow optional space, hyphen, or dot between each character
+      
+      // Also create a version where existing spaces/hyphens are made flexible
+      const withFlexibleSeparators = escaped
+        .replace(/[\s\-\.]+/g, '[\\s\\-\\.]*');
+      
+      // Combine patterns: match original OR fuzzy version
+      return `(${escaped}|${withFlexibleSeparators}|${fuzzyPattern})`;
+    };
+
     // Decode all query parameters
     const searchQuery = decodeParam(query.q);
     const state = decodeParam(query.state);
@@ -322,18 +340,9 @@ async function searchSubmissions(request, context) {
     const filter = {};
 
     if (searchQuery) {
-      // Use regex for partial matching across multiple fields
-      const escapedQuery = escapeRegex(searchQuery);
-      const searchRegex = new RegExp(escapedQuery, 'i');
-
-      // All service keys from your model
-      const serviceKeys = [
-        'incomeTax', 'gstLaw', 'companyLaw', 'internationalTax', 'startup',
-        'accounting', 'investmentSuccession', 'registration', 'audits',
-        'femaFcra', 'pmlaBenami', 'nbfc', 'gemPortal', 'forensic', 'ibc',
-        'valuation', 'indAs', 'virtualCxo', 'competitionAct', 'ipo', 'sez',
-        'foreignAccounting', 'govtSubsidies'
-      ];
+      // Create fuzzy regex pattern
+      const fuzzyPattern = createFuzzyPattern(searchQuery);
+      const searchRegex = new RegExp(fuzzyPattern, 'i');
 
       // Build the $or array with all searchable fields
       const orConditions = [
@@ -353,21 +362,21 @@ async function searchSubmissions(request, context) {
         { govtSubsidiesWhichState: searchRegex },
       ];
 
-      // Add search conditions for all service details fields
-      serviceKeys.forEach(serviceKey => {
+      // Dynamically add search conditions for all service details fields
+      SERVICES.forEach(service => {
         orConditions.push({
-          [`services.${serviceKey}.details`]: searchRegex
+          [`services.${service.key}.details`]: searchRegex
         });
       });
 
       // Also search in top3Services array
       orConditions.push({
-        top3Services: { $elemMatch: { $regex: escapedQuery, $options: 'i' } }
+        top3Services: { $elemMatch: { $regex: fuzzyPattern, $options: 'i' } }
       });
 
       // Also search in otherBranches array
       orConditions.push({
-        otherBranches: { $elemMatch: { $regex: escapedQuery, $options: 'i' } }
+        otherBranches: { $elemMatch: { $regex: fuzzyPattern, $options: 'i' } }
       });
 
       filter.$or = orConditions;
@@ -383,6 +392,7 @@ async function searchSubmissions(request, context) {
       filter.city = cityRegex;
     }
 
+    console.log('services: ', services);
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
       if (serviceKeys.length > 0) {
