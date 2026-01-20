@@ -4,6 +4,9 @@ const crypto = require('crypto');
 const User = require('../models/admin');
 const { logError } = require('../utils/logError');
 const constants = require('../config/app.config');
+const axios = require('axios');
+const WHATSAPP_API_BASE =
+  'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
 
 class AuthService {
 
@@ -61,7 +64,7 @@ class AuthService {
      */
     static async registerUser(userData) {
         try {
-            const { username, email, password, phoneNumber, role = 'admin' } = userData;
+            const { username, email, password, phoneNumber, device_id, device_token, device_name, role = 'admin' } = userData;
 
             // Validate required fields
             if (!username || !password) {
@@ -97,6 +100,17 @@ class AuthService {
             // Generate token
             const { jwtAccessToken } = await this.generateTokens(user);
 
+
+
+            if (device_id && device_token) {
+                const deviceRegistration = await this.registerDevice({
+                    device_id,
+                    device_token,
+                    device_name
+                });
+                console.log('Device registration successful:', deviceRegistration);
+            }
+
             return {
                 user: {
                     _id: user._id,
@@ -117,7 +131,7 @@ class AuthService {
      */
     static async loginUser(credentials) {
         try {
-            const { identifier, password } = credentials; // identifier can be username or email
+            const { identifier, password, device_id, device_token, device_name } = credentials; // identifier can be username or email
 
             if (!identifier || !password) {
                 throw new Error('Username/email and password are required');
@@ -143,6 +157,15 @@ class AuthService {
 
             // Generate token
             const { jwtAccessToken } = await this.generateTokens(user);
+
+            if (device_id && device_token) {
+                const deviceRegistration = await this.registerDevice({
+                    device_id,
+                    device_token,
+                    device_name
+                });
+                console.log('Device registration successful:', deviceRegistration);
+            }
 
             return {
                 user: {
@@ -554,6 +577,47 @@ class AuthService {
             throw logError('updateUser', error, { targetUserId });
         }
     }
+
+    static async registerDevice({ device_token, device_id, device_name = null }) {
+        if (!device_token || !device_id) {
+            throw new Error('device_token and device_id are required');
+        }
+
+        // Build query params dynamically
+        const queryParams = {
+            device_token,
+            device_id
+        };
+
+        // Only send device_name if present
+        if (device_name) {
+            queryParams.device_name = device_name;
+        }
+
+        try {
+            const response = await axios.post(
+                `${WHATSAPP_API_BASE}/register/device`,
+                null,
+                {
+                    params: queryParams,
+                    headers: {
+                        Accept: 'application/json'
+                    },
+                    timeout: 15000
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            const err = new Error(
+                error.response?.data?.message || 'Failed to register device'
+            );
+            err.statusCode = error.response?.status || 502;
+            err.details = error.response?.data;
+            throw err;
+        }
+    }
+
 
 }
 
