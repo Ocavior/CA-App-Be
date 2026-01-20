@@ -102,10 +102,10 @@ class EmailApiService {
                 <div style="font-family:Arial;font-size:14px;">
                     ${message}
                     <hr/>
-                    <small>© ${new Date().getFullYear()} ActoFit</small>
+                    <small>© ${new Date().getFullYear()} Master brain 🧠</small>
                 </div>
             `,
-            textTemplate: `${message}\n\n© ${new Date().getFullYear()} ActoFit`,
+            textTemplate: `${message}\n\n© ${new Date().getFullYear()} Master brain 🧠`,
             from,
             emailMessage: message
         });
