@@ -3,6 +3,7 @@ const caSubmissionRoutes = require('./caSubmissionRoutes');
 const responseWrapper = require('../utils/responseWrapper');
 const notificationRoutes = require('./notifications');
 const conversationRoutes = require('./conversationRoutes');
+const whatsappTemplateRoutes = require('./whatsappTemplateRoutes');
 class Router {
     constructor() {
         this.routes = new Map();
@@ -11,7 +12,7 @@ class Router {
     }
 
     setupRoutes() {
-
+        whatsappTemplateRoutes.registerRoutes(this);
         adminAuthRoutes.registerRoutes(this);
         conversationRoutes.registerRoutes(this);
         notificationRoutes.registerRoutes(this);
