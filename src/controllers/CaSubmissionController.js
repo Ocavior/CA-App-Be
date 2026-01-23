@@ -302,25 +302,25 @@ async function searchSubmissions(request, context) {
     // Helper function to create fuzzy search patterns
     const createFuzzyPattern = (searchTerm) => {
       if (!searchTerm) return null;
-      
+
       // Escape the search term first
       const escaped = escapeRegex(searchTerm);
-      
+
       // Create variations:
       // 1. Original term
       // 2. Replace spaces/hyphens/dots with optional space/hyphen/dot pattern
       // Example: "startup" matches "start-up", "start up", "startup"
       // Example: "gst" matches "g.s.t", "g s t", "gst"
-      
+
       // Replace any sequence of non-alphanumeric chars with a pattern that matches space, hyphen, or dot
       const fuzzyPattern = escaped
         .split('')
         .join('[\\s\\-\\.]*'); // Allow optional space, hyphen, or dot between each character
-      
+
       // Also create a version where existing spaces/hyphens are made flexible
       const withFlexibleSeparators = escaped
         .replace(/[\s\-\.]+/g, '[\\s\\-\\.]*');
-      
+
       // Combine patterns: match original OR fuzzy version
       return `(${escaped}|${withFlexibleSeparators}|${fuzzyPattern})`;
     };
@@ -393,13 +393,32 @@ async function searchSubmissions(request, context) {
     }
 
     console.log('services: ', services);
+    const subService = decodeParam(query.subService);
+
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
       if (serviceKeys.length > 0) {
-        filter.$and = serviceKeys.map(key => ({
-          [`services.${key}.offered`]: true
-        }));
+        filter.$and = serviceKeys.map(key => {
+          const condition = { [`services.${key}.offered`]: true };
+
+          // If a subService is provided and we are filtering by a single service, 
+          // or if we want to apply it to all selected services
+          if (subService) {
+            condition[`services.${key}.details`] = { $regex: escapeRegex(subService), $options: 'i' };
+          }
+
+          return condition;
+        });
       }
+    } else if (subService) {
+      // If only subService is provided without a specific service key (search across all offered services)
+      const orConditions = SERVICES.map(service => ({
+        $and: [
+          { [`services.${service.key}.offered`]: true },
+          { [`services.${service.key}.details`]: { $regex: escapeRegex(subService), $options: 'i' } }
+        ]
+      }));
+      filter.$or = orConditions;
     }
 
     if (startDate || endDate) {
@@ -1104,6 +1123,32 @@ async function validateCaContacts(request, context) {
   }
 }
 
+/**
+ * Get master list of services and sub-services
+ * GET /ca/master-services
+ */
+async function getMasterServices(request, context) {
+  try {
+    return {
+      status: 200,
+      jsonBody: {
+        success: true,
+        data: SERVICES
+      }
+    };
+  } catch (err) {
+    context.error('Get master services error:', err);
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Failed to fetch master services',
+        error: err.message
+      }
+    };
+  }
+}
+
 module.exports = {
   importExcel,
   getSubmissions,
@@ -1117,5 +1162,6 @@ module.exports = {
   updateSubmission,
   bulkDelete,
   toggleActiveStatus,
-  validateCaContacts
+  validateCaContacts,
+  getMasterServices
 };

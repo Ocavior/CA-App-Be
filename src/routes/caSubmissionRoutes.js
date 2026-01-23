@@ -12,7 +12,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.importExcel,
       description: 'Import CA submission data from Excel file'
     },
-    
+
     // ==================== CRUD ROUTES ====================
     {
       method: 'POST',
@@ -21,7 +21,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.createSubmission,
       description: 'Create a new CA submission manually'
     },
-    
+
     {
       method: 'GET',
       path: '/ca/submissions',
@@ -29,7 +29,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.getSubmissions,
       description: 'Get all CA submissions with pagination and filtering'
     },
-    
+
     {
       method: 'GET',
       path: '/ca/submissions/:id',
@@ -37,7 +37,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.getSubmissionById,
       description: 'Get a single CA submission by ID'
     },
-    
+
     {
       method: 'PUT',
       path: '/ca/submissions/:id',
@@ -45,7 +45,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.updateSubmission,
       description: 'Update an existing CA submission by ID'
     },
-    
+
     {
       method: 'DELETE',
       path: '/ca/submissions/:id',
@@ -53,7 +53,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.deleteSubmission,
       description: 'Delete a CA submission by ID'
     },
-    
+
     {
       method: 'DELETE',
       path: '/ca/submissions/bulk',
@@ -61,7 +61,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.bulkDelete,
       description: 'Bulk delete multiple CA submissions'
     },
-    
+
     // ==================== SEARCH ROUTES ====================
     {
       method: 'GET',
@@ -70,7 +70,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.searchSubmissions,
       description: 'Search CA submissions using full-text search'
     },
-    
+
     // ==================== STATISTICS ROUTES ====================
     {
       method: 'GET',
@@ -79,13 +79,21 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.getStats,
       description: 'Get aggregated statistics of CA submissions'
     },
-    
+
     {
       method: 'GET',
       path: '/ca/stats/services',
       middleware: [authenticateToken],
       handler: CaSubmissionController.getServiceStats,
       description: 'Get detailed service statistics'
+    },
+
+    {
+      method: 'GET',
+      path: '/ca/master-services',
+      middleware: [],
+      handler: CaSubmissionController.getMasterServices,
+      description: 'Get master list of services and sub-services'
     },
 
     {
@@ -102,7 +110,7 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.getByService,
       description: 'Get CAs offering a specific service'
     },
-    
+
     // ==================== HEALTH CHECK ====================
     {
       method: 'GET',
@@ -127,10 +135,10 @@ const caSubmissionRoutes = {
       handler: CaSubmissionController.validateCaContacts,
       description: 'Validate CA email or WhatsApp number by CA IDs'
     }
-    
+
   ],
-  
-  registerRoutes: function(router) {
+
+  registerRoutes: function (router) {
     this.routes.forEach(route => {
       const { method, path, middleware, handler } = route;
       if (middleware && middleware.length > 0) {
