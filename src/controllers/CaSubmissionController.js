@@ -363,9 +363,12 @@ async function searchSubmissions(request, context) {
       ];
 
       // Dynamically add search conditions for all service details fields
+      // Use strict boundary-aware regex to match whole sub-services only
+      const detailSearchRegex = new RegExp(`(?:^|,)\\s*(${escapeRegex(searchQuery)})\\s*(?:,|$)`, 'i');
+
       SERVICES.forEach(service => {
         orConditions.push({
-          [`services.${service.key}.details`]: searchRegex
+          [`services.${service.key}.details`]: detailSearchRegex
         });
       });
 
@@ -393,7 +396,7 @@ async function searchSubmissions(request, context) {
     }
 
     console.log('services: ', services);
-    const subService = decodeParam(query.subService);
+    const subServiceParam = decodeParam(query.subService);
 
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
@@ -401,21 +404,24 @@ async function searchSubmissions(request, context) {
         filter.$and = serviceKeys.map(key => {
           const condition = { [`services.${key}.offered`]: true };
 
-          // If a subService is provided and we are filtering by a single service, 
-          // or if we want to apply it to all selected services
-          if (subService) {
-            condition[`services.${key}.details`] = { $regex: escapeRegex(subService), $options: 'i' };
+          if (subServiceParam) {
+            const subServices = subServiceParam.split(',').map(s => escapeRegex(s.trim()));
+            // Exact match logic: term must be a full phrase between commas or start/end
+            const subServiceRegex = new RegExp(`(?:^|,)\\s*(${subServices.join('|')})\\s*(?:,|$)`, 'i');
+            condition[`services.${key}.details`] = { $regex: subServiceRegex };
           }
 
           return condition;
         });
       }
-    } else if (subService) {
-      // If only subService is provided without a specific service key (search across all offered services)
+    } else if (subServiceParam) {
+      const subServices = subServiceParam.split(',').map(s => escapeRegex(s.trim()));
+      const subServiceRegex = new RegExp(`(?:^|,)\\s*(${subServices.join('|')})\\s*(?:,|$)`, 'i');
+
       const orConditions = SERVICES.map(service => ({
         $and: [
           { [`services.${service.key}.offered`]: true },
-          { [`services.${service.key}.details`]: { $regex: escapeRegex(subService), $options: 'i' } }
+          { [`services.${service.key}.details`]: { $regex: subServiceRegex } }
         ]
       }));
       filter.$or = orConditions;
