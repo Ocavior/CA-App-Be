@@ -140,6 +140,12 @@ const SERVICES = [
     name: 'Govt Subsidies',
     key: 'govtSubsidies',
     subServices: []
+  },
+  {
+    id: 24,
+    name: 'Other Services',
+    key: 'other',
+    subServices: []
   }
 ];
 
@@ -308,6 +314,10 @@ const CaSubmissionSchema = new mongoose.Schema({
     govtSubsidies: {
       type: ServiceDetailSchema,
       default: () => ({})
+    },
+    other: {
+      type: ServiceDetailSchema,
+      default: () => ({})
     }
   },
 
@@ -463,12 +473,26 @@ CaSubmissionSchema.statics.findByServices = function (serviceKeys) {
 // Get service statistics
 CaSubmissionSchema.statics.getServiceStats = async function () {
   const stats = {};
+
   for (const service of SERVICES) {
-    const count = await this.countDocuments({
-      [`services.${service.key}.offered`]: true
-    });
+    let count = 0;
+
+    // ✅ Special case: Other Services
+    if (service.key === 'other') {
+      count = await this.countDocuments({
+        otherServices: { $exists: true, $ne: '' }
+      });
+    }
+    // ✅ All normal services
+    else {
+      count = await this.countDocuments({
+        [`services.${service.key}.offered`]: true
+      });
+    }
+
     stats[service.name] = count;
   }
+
   return stats;
 };
 
