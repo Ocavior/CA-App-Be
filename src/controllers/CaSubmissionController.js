@@ -382,15 +382,30 @@ async function searchSubmissions(request, context) {
     // -------- SERVICES --------
     if (services) {
       const serviceKeys = services.split(',').map(s => s.trim());
+
       serviceKeys.forEach(key => {
+
+        // ⭐ SPECIAL CASE: other
+        if (key === 'other') {
+          filter.$and.push({
+            otherServices: { $regex: /\S/ } // exists & not empty
+          });
+          return;
+        }
+
+        // ✅ NORMAL SERVICES
         const condition = { [`services.${key}.offered`]: true };
 
         if (subServiceParam) {
-          const subServices = subServiceParam.split(',').map(s => escapeRegex(s.trim()));
+          const subServices = subServiceParam
+            .split(',')
+            .map(s => escapeRegex(s.trim()));
+
           const subServiceRegex = new RegExp(
             `(?:^|,)\\s*(${subServices.join('|')})\\s*(?:,|$)`,
             'i'
           );
+
           condition[`services.${key}.details`] = { $regex: subServiceRegex };
         }
 
