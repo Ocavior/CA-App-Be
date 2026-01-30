@@ -572,22 +572,55 @@ async function getStats(request, context) {
       // Count services offered - NEW: works with services.{key}.offered structure
       CaSubmission.aggregate([
         {
+          $facet: {
+            // ---------------- NORMAL SERVICES ----------------
+            structuredServices: [
+              {
+                $project: {
+                  servicesArray: { $objectToArray: '$services' }
+                }
+              },
+              { $unwind: '$servicesArray' },
+              {
+                $match: {
+                  'servicesArray.v.offered': true
+                }
+              },
+              {
+                $group: {
+                  _id: '$servicesArray.k',
+                  count: { $sum: 1 }
+                }
+              }
+            ],
+
+            // ---------------- OTHER SERVICES ----------------
+            otherServices: [
+              {
+                $match: {
+                  otherServices: { $regex: /\S/ } // exists & not empty
+                }
+              },
+              {
+                $group: {
+                  _id: 'other',
+                  count: { $sum: 1 }
+                }
+              }
+            ]
+          }
+        },
+
+        // ---------------- MERGE RESULTS ----------------
+        {
           $project: {
-            servicesArray: { $objectToArray: '$services' }
+            merged: { $concatArrays: ['$structuredServices', '$otherServices'] }
           }
         },
-        { $unwind: '$servicesArray' },
-        {
-          $match: {
-            'servicesArray.v.offered': true
-          }
-        },
-        {
-          $group: {
-            _id: '$servicesArray.k',
-            count: { $sum: 1 }
-          }
-        },
+        { $unwind: '$merged' },
+        { $replaceRoot: { newRoot: '$merged' } },
+
+        // ---------------- SORT ----------------
         { $sort: { count: -1 } }
       ])
     ]);
