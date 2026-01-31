@@ -301,25 +301,14 @@ async function searchSubmissions(request, context) {
     const escapeRegex = (str) =>
       str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    const createFuzzyPattern = (searchTerm) => {
-      if (!searchTerm) return null;
-      const escaped = escapeRegex(searchTerm);
-      const fuzzyPattern = escaped.split('').join('[\\s\\-\\.]*');
-      const withFlexibleSeparators = escaped.replace(/[\s\-\.]+/g, '[\\s\\-\\.]*');
-      return `(${escaped}|${withFlexibleSeparators}|${fuzzyPattern})`;
-    };
-
     // ---------------- PARAMS ----------------
     const searchQuery = decodeParam(query.q);
     const state = decodeParam(query.state);
     const city = decodeParam(query.city);
-    const services = decodeParam(query.services);
-    const subServiceParam = decodeParam(query.subService);
+    const servicesParam = decodeParam(query.services);
     const startDate = query.startDate;
     const endDate = query.endDate;
     const isActive = query.isActive;
-
-    // ⭐ NEW PARAM
     const employerAvailable = query.employerAvailable;
 
     // ---------------- FILTER ----------------
@@ -328,7 +317,7 @@ async function searchSubmissions(request, context) {
 
     // -------- TEXT SEARCH --------
     if (searchQuery) {
-      const fuzzyPattern = createFuzzyPattern(searchQuery);
+      const fuzzyPattern = escapeRegex(searchQuery).split('').join('[\\s\\-\\.]*');
       const searchRegex = new RegExp(fuzzyPattern, 'i');
 
       const orConditions = [
@@ -341,30 +330,18 @@ async function searchSubmissions(request, context) {
         { state: searchRegex },
         { remarks: searchRegex },
         { otherServices: searchRegex },
-        { employer: searchRegex },
-        { formFiledBy: searchRegex },
-        { projectHelpDetails: searchRegex },
-        { foreignWhichCountry: searchRegex },
-        { govtSubsidiesWhichState: searchRegex }
+        { employer: searchRegex }
       ];
-
-      const detailSearchRegex = new RegExp(
-        `(?:^|,)\\s*(${escapeRegex(searchQuery)})\\s*(?:,|$)`,
-        'i'
-      );
 
       SERVICES.forEach(service => {
         orConditions.push({
-          [`services.${service.key}.details`]: detailSearchRegex
+          [`services.${service.key}.details`]: {
+            $regex: new RegExp(
+              `(?:^|,)\\s*(${escapeRegex(searchQuery)})\\s*(?:,|$)`,
+              'i'
+            )
+          }
         });
-      });
-
-      orConditions.push({
-        top3Services: { $elemMatch: { $regex: fuzzyPattern, $options: 'i' } }
-      });
-
-      orConditions.push({
-        otherBranches: { $elemMatch: { $regex: fuzzyPattern, $options: 'i' } }
       });
 
       filter.$and.push({ $or: orConditions });
@@ -379,26 +356,28 @@ async function searchSubmissions(request, context) {
       filter.$and.push({ city: new RegExp(escapeRegex(city), 'i') });
     }
 
-    // -------- SERVICES --------
-    if (services) {
-      const serviceKeys = services.split(',').map(s => s.trim());
+    // -------- SERVICES + SUBSERVICES (FIXED) --------
+    if (servicesParam) {
+      const serviceEntries = servicesParam.split(',').map(s => s.trim());
 
-      serviceKeys.forEach(key => {
+      serviceEntries.forEach(entry => {
+        const [serviceKey, subServiceRaw] = entry.split(':');
 
-        // ⭐ SPECIAL CASE: other
-        if (key === 'other') {
+        // Special case: other
+        if (serviceKey === 'other') {
           filter.$and.push({
-            otherServices: { $regex: /\S/ } // exists & not empty
+            otherServices: { $regex: /\S/ }
           });
           return;
         }
 
-        // ✅ NORMAL SERVICES
-        const condition = { [`services.${key}.offered`]: true };
+        const condition = {
+          [`services.${serviceKey}.offered`]: true
+        };
 
-        if (subServiceParam) {
-          const subServices = subServiceParam
-            .split(',')
+        if (subServiceRaw) {
+          const subServices = subServiceRaw
+            .split('|')
             .map(s => escapeRegex(s.trim()));
 
           const subServiceRegex = new RegExp(
@@ -406,7 +385,9 @@ async function searchSubmissions(request, context) {
             'i'
           );
 
-          condition[`services.${key}.details`] = { $regex: subServiceRegex };
+          condition[`services.${serviceKey}.details`] = {
+            $regex: subServiceRegex
+          };
         }
 
         filter.$and.push(condition);
@@ -432,16 +413,13 @@ async function searchSubmissions(request, context) {
       });
     }
 
-    // ⭐ -------- EMPLOYER AVAILABLE FILTER --------
+    // -------- EMPLOYER AVAILABLE --------
     if (employerAvailable !== undefined) {
       const wantsEmployer = employerAvailable === 'true' || employerAvailable === true;
 
       if (wantsEmployer) {
         filter.$and.push({
-          employer: {
-            $exists: true,
-            $regex: '\\S'
-          }
+          employer: { $exists: true, $regex: '\\S' }
         });
       } else {
         filter.$and.push({
@@ -498,6 +476,7 @@ async function searchSubmissions(request, context) {
         }
       }
     };
+
   } catch (err) {
     context.error('Search submissions error:', err);
     return {
