@@ -317,9 +317,9 @@ async function searchSubmissions(request, context) {
 
     // -------- TEXT SEARCH --------
     if (searchQuery) {
-      const fuzzyPattern = escapeRegex(searchQuery).split('').join('[\\s\\-\\.]*');
+      const escapedQuery = escapeRegex(searchQuery);
+      const fuzzyPattern = escapedQuery.split('').join('[\\s\\-\\.]*');
       const searchRegex = new RegExp(fuzzyPattern, 'i');
-
       const orConditions = [
         { name: searchRegex },
         { email: searchRegex },
@@ -333,11 +333,19 @@ async function searchSubmissions(request, context) {
         { employer: searchRegex }
       ];
 
+      // Add conditions for each service
       SERVICES.forEach(service => {
+        // 1. If the searchQuery itself matches the service name, include anyone who offers it
+        const serviceNameRegex = new RegExp(escapedQuery, 'i');
+        if (serviceNameRegex.test(service.name)) {
+          orConditions.push({ [`services.${service.key}.offered`]: true });
+        }
+
+        // 2. Also keep the existing logic that searches inside service details
         orConditions.push({
           [`services.${service.key}.details`]: {
             $regex: new RegExp(
-              `(?:^|,)\\s*(${escapeRegex(searchQuery)})\\s*(?:,|$)`,
+              `(?:^|,)\\s*(${escapedQuery})\\s*(?:,|$)`,
               'i'
             )
           }
