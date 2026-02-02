@@ -6,7 +6,7 @@ const { logError } = require('../utils/logError');
 const constants = require('../config/app.config');
 const axios = require('axios');
 const WHATSAPP_API_BASE =
-  'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
+    'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
 
 class AuthService {
 
@@ -132,7 +132,7 @@ class AuthService {
     static async loginUser(credentials) {
         try {
             const { identifier, password, device_id, device_token, device_name } = credentials; // identifier can be username or email
-
+            console.log("payloads : ", credentials);
             if (!identifier || !password) {
                 throw new Error('Username/email and password are required');
             }
