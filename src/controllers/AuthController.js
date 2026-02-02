@@ -29,7 +29,10 @@ class AuthController {
 
     loginUser = async (request, context) => {
         try {
-            const responseData = await AuthService.loginUser(await request.json() || {});
+            const payload = await request.json() || {};
+            context.log()
+            console.log("payload : ", payload);
+            const responseData = await AuthService.loginUser(payload);
 
             return {
                 status: 200,
