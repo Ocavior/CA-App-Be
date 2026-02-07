@@ -333,6 +333,11 @@ async function searchSubmissions(request, context) {
         { employer: searchRegex }
       ];
 
+      // Special case: "other" or "others"
+      if (['other', 'others'].includes(searchQuery.toLowerCase())) {
+        orConditions.push({ otherServices: { $exists: true, $regex: /\S/ } });
+      }
+
       // Add conditions for each service
       SERVICES.forEach(service => {
         // 1. If the searchQuery itself matches the service name, include anyone who offers it

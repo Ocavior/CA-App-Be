@@ -139,7 +139,7 @@ const SERVICES = [
     id: 23,
     name: 'Govt Subsidies',
     key: 'govtSubsidies',
-    subServices: []
+    subServices: ['State Subsidy', 'Central Subsidy']
   },
   {
     id: 24,
