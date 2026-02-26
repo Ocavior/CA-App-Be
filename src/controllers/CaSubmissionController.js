@@ -298,7 +298,8 @@ async function searchSubmissions(request, context) {
       }
     };
 
-    const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapeRegex = (str) =>
+      str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // ---------------- PARAMS ----------------
     const searchQuery = decodeParam(query.q);
@@ -311,54 +312,102 @@ async function searchSubmissions(request, context) {
     const employerAvailable = query.employerAvailable;
 
     // ---------------- FILTER ----------------
-    const filter = { $and: [] };
+    const filter = {};
+    filter.$and = [];
 
+    // -------- TEXT SEARCH --------
     if (searchQuery) {
       const escapedQuery = escapeRegex(searchQuery);
-      // Simple substring match to catch "Aman" and "Raman"
-      const searchRegex = new RegExp(escapedQuery, 'i');
-      
+      const fuzzyPattern = escapedQuery.split('').join('[\\s\\-\\.]*');
+      const searchRegex = new RegExp(fuzzyPattern, 'i');
       const orConditions = [
-        { name: searchRegex }, { email: searchRegex }, { newEmail: searchRegex },
-        { mobile: searchRegex }, { whatsappNumber: searchRegex }, { city: searchRegex },
-        { state: searchRegex }, { remarks: searchRegex }, { otherServices: searchRegex },
+        { name: searchRegex },
+        { email: searchRegex },
+        { newEmail: searchRegex },
+        { mobile: searchRegex },
+        { whatsappNumber: searchRegex },
+        { city: searchRegex },
+        { state: searchRegex },
+        { remarks: searchRegex },
+        { otherServices: searchRegex },
         { employer: searchRegex }
       ];
 
+      // Special case: "other" or "others"
       if (['other', 'others'].includes(searchQuery.toLowerCase())) {
         orConditions.push({ otherServices: { $exists: true, $regex: /\S/ } });
       }
 
+      // Add conditions for each service
       SERVICES.forEach(service => {
-        if (new RegExp(escapedQuery, 'i').test(service.name)) {
+        // 1. If the searchQuery itself matches the service name, include anyone who offers it
+        const serviceNameRegex = new RegExp(escapedQuery, 'i');
+        if (serviceNameRegex.test(service.name)) {
           orConditions.push({ [`services.${service.key}.offered`]: true });
         }
-        orConditions.push({ [`services.${service.key}.details`]: searchRegex });
+
+        // 2. Also keep the existing logic that searches inside service details
+        orConditions.push({
+          [`services.${service.key}.details`]: {
+            $regex: new RegExp(
+              `(?:^|,)\\s*(${escapedQuery})\\s*(?:,|$)`,
+              'i'
+            )
+          }
+        });
       });
 
       filter.$and.push({ $or: orConditions });
     }
 
-    // Add other filters (State, City, Date, etc.)
-    if (state) filter.$and.push({ state: new RegExp(escapeRegex(state), 'i') });
-    if (city) filter.$and.push({ city: new RegExp(escapeRegex(city), 'i') });
-    
+    // -------- STATE / CITY --------
+    if (state) {
+      filter.$and.push({ state: new RegExp(escapeRegex(state), 'i') });
+    }
+
+    if (city) {
+      filter.$and.push({ city: new RegExp(escapeRegex(city), 'i') });
+    }
+
+    // -------- SERVICES + SUBSERVICES (FIXED) --------
     if (servicesParam) {
-      servicesParam.split(',').forEach(entry => {
-        const [serviceKey, subServiceRaw] = entry.trim().split(':');
+      const serviceEntries = servicesParam.split(',').map(s => s.trim());
+
+      serviceEntries.forEach(entry => {
+        const [serviceKey, subServiceRaw] = entry.split(':');
+
+        // Special case: other
         if (serviceKey === 'other') {
-          filter.$and.push({ otherServices: { $regex: /\S/ } });
-        } else {
-          const condition = { [`services.${serviceKey}.offered`]: true };
-          if (subServiceRaw) {
-            const subServices = subServiceRaw.split('|').map(s => escapeRegex(s.trim()));
-            condition[`services.${serviceKey}.details`] = { $regex: new RegExp(`(?:^|,)\\s*(${subServices.join('|')})\\s*(?:,|$)`, 'i') };
-          }
-          filter.$and.push(condition);
+          filter.$and.push({
+            otherServices: { $regex: /\S/ }
+          });
+          return;
         }
+
+        const condition = {
+          [`services.${serviceKey}.offered`]: true
+        };
+
+        if (subServiceRaw) {
+          const subServices = subServiceRaw
+            .split('|')
+            .map(s => escapeRegex(s.trim()));
+
+          const subServiceRegex = new RegExp(
+            `(?:^|,)\\s*(${subServices.join('|')})\\s*(?:,|$)`,
+            'i'
+          );
+
+          condition[`services.${serviceKey}.details`] = {
+            $regex: subServiceRegex
+          };
+        }
+
+        filter.$and.push(condition);
       });
     }
 
+    // -------- DATE RANGE --------
     if (startDate || endDate) {
       const dateFilter = {};
       if (startDate) dateFilter.$gte = new Date(startDate);
@@ -370,62 +419,159 @@ async function searchSubmissions(request, context) {
       filter.$and.push({ timestamp: dateFilter });
     }
 
+    // -------- ACTIVE --------
     if (isActive !== undefined) {
-      filter.$and.push({ isActive: isActive === 'true' || isActive === true });
+      filter.$and.push({
+        isActive: isActive === 'true' || isActive === true
+      });
     }
 
+    // -------- EMPLOYER AVAILABLE --------
     if (employerAvailable !== undefined) {
-      if (employerAvailable === 'true' || employerAvailable === true) {
-        filter.$and.push({ employer: { $exists: true, $regex: '\\S' } });
+      const wantsEmployer = employerAvailable === 'true' || employerAvailable === true;
+
+      if (wantsEmployer) {
+        filter.$and.push({
+          employer: { $exists: true, $regex: '\\S' }
+        });
       } else {
-        filter.$and.push({ $or: [{ employer: { $exists: false } }, { employer: null }, { employer: '' }, { employer: { $regex: '^\\s*$' } }] });
+        filter.$and.push({
+          $or: [
+            { employer: { $exists: false } },
+            { employer: null },
+            { employer: '' },
+            { employer: { $regex: '^\\s*$' } }
+          ]
+        });
       }
     }
 
+    // Cleanup empty $and
     if (filter.$and.length === 0) delete filter.$and;
 
-    // ---------------- PAGINATION & AGGREGATION ----------------
+    // ---------------- PAGINATION ----------------
     const page = parseInt(query.page) || 1;
     const limit = Math.min(parseInt(query.limit) || 10, 100);
     const skip = (page - 1) * limit;
 
-    const pipeline = [{ $match: filter }];
+    let submissions;
+    let totalCount;
 
-    // Add Relevance Scoring if searching
+    // ---------------- RELEVANCE SCORING (when searchQuery present) ----------------
+    // Score breakdown per text field (higher = better match):
+    //   4 – a complete word in the field EXACTLY equals the query
+    //       ("aman", "aman singh" → word "aman" matches exactly)
+    //   3 – a word in the field STARTS WITH the query but is longer
+    //       ("amandeep", "amandeep singh" → word "amandeep" starts with "aman")
+    //   2 – query appears anywhere in the field (e.g. "raman", "naman")
+    //   0 – no match
+    //
+    // _relevanceScore = MAX score across all searched text fields.
+
     if (searchQuery) {
-      const escapedQuery = escapeRegex(searchQuery);
-      pipeline.push({
-        $addFields: {
-          relevance: {
-            $cond: [
-              // Priority 1: Exact match or starts with (e.g., "Aman")
-              { $regexMatch: { input: "$name", regex: new RegExp(`^${escapedQuery}`, 'i') } },
-              2,
-              // Priority 2: Substring match (e.g., "Raman")
-              1
-            ]
-          }
+      const escapedQ = escapeRegex(searchQuery);
+
+      // Regex: a complete word exactly equals the query (surrounded by word boundaries)
+      // e.g. "aman" matches in "aman singh" but NOT in "amandeep"
+      const exactWordRegex = new RegExp(`(?:^|[\\s\\-,])${escapedQ}(?=[\\s\\-,]|$)`, 'i');
+
+      // Regex: a word STARTS WITH the query (could be a longer word like "amandeep")
+      const wordStartRegex = new RegExp(`(?:^|[\\s\\-,])${escapedQ}`, 'i');
+
+      // Regex: query appears anywhere in the field (fuzzy fallback — "raman", "naman")
+      const anywhereRegex = new RegExp(escapedQ.split('').join('[\\s\\-\\.]*'), 'i');
+
+      // Helper that produces a $switch expression scoring one string field
+      const scoreField = (fieldPath) => ({
+        $switch: {
+          branches: [
+            // Exact whole-word match — highest priority
+            {
+              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: exactWordRegex } },
+              then: 4
+            },
+            // A word starts with the query (but is longer, e.g. "amandeep")
+            {
+              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: wordStartRegex } },
+              then: 3
+            },
+            // Query appears anywhere in the field
+            {
+              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: anywhereRegex } },
+              then: 2
+            }
+          ],
+          default: 0
         }
       });
-      pipeline.push({ $sort: { relevance: -1, timestamp: -1 } });
-    } else {
-      pipeline.push({ $sort: { timestamp: -1 } });
-    }
 
-    pipeline.push({ $project: { rawData: 0 } });
+      // ---- PRIORITY fields: name, email, service details, otherServices ----
+      // A match here always outranks a match that only touches secondary fields.
+      const primaryFields = [
+        'name', 'email', 'newEmail',
+        'otherServices',
+        ...SERVICES.map(s => `services.${s.key}.details`)
+      ];
 
-    // Execute with count for pagination
-    const [results] = await CaSubmission.aggregate([
-      {
-        $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
-          totalCount: [{ $count: "count" }]
-        }
+      // ---- SECONDARY fields: location, contact, freetext ----
+      const secondaryFields = [
+        'mobile', 'whatsappNumber',
+        'city', 'state',
+        'remarks', 'employer'
+      ];
+
+      const scoringPipeline = [
+        { $match: filter },
+        {
+          $addFields: {
+            // Best match quality score across primary fields
+            _primaryScore: { $max: primaryFields.map(f => scoreField(f)) },
+            // Best match quality score across secondary fields
+            _secondaryScore: { $max: secondaryFields.map(f => scoreField(f)) }
+          }
+        },
+        // Sort: primary match first, then secondary, then newest
+        { $sort: { _primaryScore: -1, _secondaryScore: -1, timestamp: -1 } },
+        { $project: { rawData: 0 } }
+      ];
+
+      if (skip === 0) {
+        const [results, count] = await Promise.all([
+          CaSubmission.aggregate([
+            ...scoringPipeline,
+            { $limit: limit }
+          ]),
+          CaSubmission.countDocuments(filter)
+        ]);
+        submissions = results;
+        totalCount = count;
+      } else {
+        submissions = await CaSubmission.aggregate([
+          ...scoringPipeline,
+          { $skip: skip },
+          { $limit: limit }
+        ]);
+        totalCount = null;
       }
-    ]);
+    } else {
+      // No searchQuery – use the fast find() path (unchanged behaviour)
+      const projection = { rawData: 0 };
+      const sort = { timestamp: -1 };
 
-    const submissions = results.data;
-    const totalCount = results.totalCount[0]?.count || 0;
+      if (skip === 0) {
+        [submissions, totalCount] = await Promise.all([
+          CaSubmission.find(filter, projection).sort(sort).limit(limit).lean(),
+          CaSubmission.countDocuments(filter)
+        ]);
+      } else {
+        submissions = await CaSubmission.find(filter, projection)
+          .sort(sort)
+          .skip(skip)
+          .limit(limit)
+          .lean();
+        totalCount = null;
+      }
+    }
 
     return {
       status: 200,
@@ -434,10 +580,10 @@ async function searchSubmissions(request, context) {
         data: submissions,
         pagination: {
           currentPage: page,
-          totalPages: Math.ceil(totalCount / limit),
+          totalPages: totalCount ? Math.ceil(totalCount / limit) : null,
           totalCount,
           limit,
-          hasNextPage: (page * limit) < totalCount,
+          hasNextPage: submissions.length === limit,
           hasPrevPage: page > 1
         }
       }
@@ -445,9 +591,17 @@ async function searchSubmissions(request, context) {
 
   } catch (err) {
     context.error('Search submissions error:', err);
-    return { status: 500, jsonBody: { success: false, message: 'Search failed', error: err.message } };
+    return {
+      status: 500,
+      jsonBody: {
+        success: false,
+        message: 'Search failed',
+        error: err.message
+      }
+    };
   }
 }
+
 
 
 /**
