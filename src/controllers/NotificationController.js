@@ -6,7 +6,7 @@ const WHATSAPP_API_BASE = 'https://whatsapp-backend.happyriver-1999a58f.southind
 const WHATSAPP_BULK_API = `${WHATSAPP_API_BASE}/send/bulk`;
 const WHATSAPP_SEND_TEXT_API = `${WHATSAPP_API_BASE}/send/text`;
 const WHATSAPP_SEND_TEMPLATE_API = `${WHATSAPP_API_BASE}/send/template`;
-const WHATSAPP_BULK_TEMPLATE_API = `${WHATSAPP_API_BASE}/bulk/template`;
+const WHATSAPP_BULK_TEMPLATE_API = `${WHATSAPP_API_BASE}/send/bulk/template`;
 
 async function sendBulkWhatsapp(request, context) {
   try {
@@ -228,7 +228,7 @@ async function getEmailLogs(request, context) {
     // Get query parameters if any filters are passed
     const url = new URL(request.url);
     const filters = {};
-    
+
     // Extract any additional query parameters as filters
     url.searchParams.forEach((value, key) => {
       if (key !== 'appCode') { // appCode is already handled in the service
