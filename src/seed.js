@@ -6,9 +6,7 @@ const path = require('path');
 const CaSubmission = require('./models/caData');
 const { SERVICES } = require('./models/caData');
 
-const MONGO_URI =
-    'mongodb+srv://himanshu:DmnnW3cmpVk8UYNd@actofitwellness.g8gkulc.mongodb.net/ca_app_db_prod';
-
+const MONGO_URI = process.env.MONGODB_URI;
 // ================= CONNECT =================
 async function connectDB() {
     await mongoose.connect(MONGO_URI);
