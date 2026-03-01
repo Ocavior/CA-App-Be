@@ -385,7 +385,6 @@ const CaSubmissionSchema = new mongoose.Schema({
 // Compound indexes for common queries
 CaSubmissionSchema.index({ name: 1, mobile: 1 });
 CaSubmissionSchema.index({ state: 1, city: 1 });
-CaSubmissionSchema.index({ email: 1 }, { sparse: true });
 CaSubmissionSchema.index({ createdAt: -1 });
 CaSubmissionSchema.index({ timestamp: -1 });
 CaSubmissionSchema.index({ source: 1, createdAt: -1 });
