@@ -1211,7 +1211,7 @@ async function validateCaContacts(request, context) {
       }
 
       if (validationType === 'whatsapp') {
-        value = ca.whatsappNumber || ca.mobile || null;
+        value = ca.mobile || null;
         isValid = value ? PHONE_REGEX.test(value) : false;
       }
 
