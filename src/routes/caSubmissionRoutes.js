@@ -8,16 +8,30 @@ const caSubmissionRoutes = {
     {
       method: 'POST',
       path: '/ca/import',
-      middleware: [],
+      middleware: [authenticateToken],
       handler: CaSubmissionController.importExcel,
-      description: 'Import CA submission data from Excel file'
+      description: 'Import CA submission data from a CSV/Excel file (single-shot, no preview)'
+    },
+    {
+      method: 'POST',
+      path: '/ca/import/preview',
+      middleware: [authenticateToken],
+      handler: CaSubmissionController.previewImport,
+      description: 'Dry-run a CSV/Excel import: validate, detect new services/sub-services, no DB writes'
+    },
+    {
+      method: 'POST',
+      path: '/ca/import/confirm',
+      middleware: [authenticateToken],
+      handler: CaSubmissionController.importExcel,
+      description: 'Commit a previously-previewed CSV/Excel import (re-submit the same file)'
     },
 
     // ==================== CRUD ROUTES ====================
     {
       method: 'POST',
       path: '/ca/submissions',
-      middleware: [],
+      middleware: [authenticateToken],
       handler: CaSubmissionController.createSubmission,
       description: 'Create a new CA submission manually'
     },

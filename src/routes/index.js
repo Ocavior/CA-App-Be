@@ -4,6 +4,7 @@ const responseWrapper = require('../utils/responseWrapper');
 const notificationRoutes = require('./notifications');
 const conversationRoutes = require('./conversationRoutes');
 const whatsappTemplateRoutes = require('./whatsappTemplateRoutes');
+const serviceRoutes = require('./serviceRoutes');
 class Router {
     constructor() {
         this.routes = new Map();
@@ -17,6 +18,7 @@ class Router {
         conversationRoutes.registerRoutes(this);
         notificationRoutes.registerRoutes(this);
         caSubmissionRoutes.registerRoutes(this);
+        serviceRoutes.registerRoutes(this);
         // Health check
         this.addRoute('GET', '/health-check', this.healthCheck);
 
@@ -406,8 +408,14 @@ class Router {
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
             'application/vnd.ms-excel', // .xls
-            'application/vnd.oasis.opendocument.spreadsheet' // .ods
+            'application/vnd.oasis.opendocument.spreadsheet', // .ods
+            'text/csv', // .csv
+            'text/plain', // .csv (some browsers/OSes mislabel csv this way)
+            'application/csv'
         ];
+        // CSV mimetypes are unreliable across browsers/OSes - fall back to
+        // extension for these known-tricky types instead of rejecting outright.
+        const csvLikeExtensions = ['.csv', '.xlsx', '.xls', '.ods'];
 
         const maxFileSize = 10 * 1024 * 1024; // 10MB
 
@@ -420,8 +428,11 @@ class Router {
                 throw new Error(`File ${file.originalname} exceeds maximum size of 10MB`);
             }
 
-            if (!allowedTypes.includes(file.mimetype)) {
-                throw new Error(`File ${file.originalname} has unsupported type: ${file.mimetype}. Allowed types: PDF, Images, Word, Excel`);
+            const mimetypeOk = allowedTypes.includes(file.mimetype);
+            const extensionOk = csvLikeExtensions.some(ext => file.originalname.toLowerCase().endsWith(ext));
+
+            if (!mimetypeOk && !extensionOk) {
+                throw new Error(`File ${file.originalname} has unsupported type: ${file.mimetype}. Allowed types: PDF, Images, Word, CSV, Excel`);
             }
 
             if (file.originalname.length > 255) {

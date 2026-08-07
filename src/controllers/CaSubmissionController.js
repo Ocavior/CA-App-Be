@@ -1,69 +1,105 @@
 // controllers/CaSubmissionController.js
-const { importFromExcel, createCaSubmission, updateCaSubmission } = require('../services/CaSubmissionImportService');
+const { importFromExcel, previewExcel, createCaSubmission, updateCaSubmission, toggleCaActive, FileValidationError } = require('../services/CaSubmissionImportService');
 const CaSubmission = require('../models/caData');
-const { SERVICES } = require('../models/caData');
+const ServiceManagementService = require('../services/ServiceManagementService');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const mongoose = require('mongoose');
 const PHONE_REGEX = /^\+?[1-9]\d{9,14}$/;
+
+// Accepted mimetypes for import uploads. Browsers/OSes send inconsistent
+// mimetypes for .csv (sometimes application/vnd.ms-excel, sometimes
+// text/plain), so this is backed up by an extension check below.
+const VALID_IMPORT_MIME_TYPES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-excel', // .xls
+  'application/vnd.oasis.opendocument.spreadsheet', // .ods
+  'text/csv', // .csv
+  'text/plain', // .csv (some browsers/OSes mislabel csv this way)
+  'application/csv'
+];
+const VALID_IMPORT_EXTENSIONS = ['.xlsx', '.xls', '.ods', '.csv'];
+
+function hasValidImportExtension(filename) {
+  if (!filename) return false;
+  const lower = String(filename).toLowerCase();
+  return VALID_IMPORT_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
 /**
- * Import Excel file with CA submissions
- * POST /ca/import
+ * Pulls the uploaded file out of the request and validates its type.
+ * Returns { file } on success, or { errorResponse } to return as-is.
+ */
+function extractUploadedExcelFile(request, context) {
+  if (!request.files || Object.keys(request.files).length === 0) {
+    return {
+      errorResponse: {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: 'No file uploaded. Please upload a CSV or Excel file with field name "file" or "documents".'
+        }
+      }
+    };
+  }
+
+  const uploadedFile = request.files.file || request.files.documents || Object.values(request.files)[0];
+
+  if (!uploadedFile || !uploadedFile.data) {
+    return {
+      errorResponse: {
+        status: 400,
+        jsonBody: { success: false, message: 'Invalid file upload. File data is missing.' }
+      }
+    };
+  }
+
+  context.log('Processing file:', {
+    name: uploadedFile.originalname,
+    size: uploadedFile.size,
+    mimetype: uploadedFile.mimetype
+  });
+
+  const mimetypeOk = VALID_IMPORT_MIME_TYPES.includes(uploadedFile.mimetype);
+  const extensionOk = hasValidImportExtension(uploadedFile.originalname || uploadedFile.name);
+
+  if (!mimetypeOk && !extensionOk) {
+    return {
+      errorResponse: {
+        status: 400,
+        jsonBody: {
+          success: false,
+          message: `Invalid file type. Expected CSV or Excel file (.csv, .xlsx, .xls), got ${uploadedFile.mimetype}`
+        }
+      }
+    };
+  }
+
+  return { file: uploadedFile };
+}
+
+function fileValidationOrServerError(err, context, logLabel) {
+  context.error(`${logLabel}:`, err);
+  if (err instanceof FileValidationError || err.statusCode === 400) {
+    return { status: 400, jsonBody: { success: false, message: err.message } };
+  }
+  return {
+    status: 500,
+    jsonBody: { success: false, message: `Failed to ${logLabel.toLowerCase()}`, error: err.message }
+  };
+}
+
+/**
+ * Import CSV/Excel file with CA submissions - commits directly to the database.
+ * POST /ca/import and POST /ca/import/confirm (same handler - "confirm" is
+ * the second half of the preview flow, re-submitting the reviewed file)
  * Upload file with field name "file" or "documents"
  */
 async function importExcel(request, context) {
   try {
-    // Check if files were uploaded
-    if (!request.files || Object.keys(request.files).length === 0) {
-      return {
-        status: 400,
-        jsonBody: {
-          success: false,
-          message: 'No file uploaded. Please upload an Excel file with field name "file" or "documents".'
-        }
-      };
-    }
+    const { file, errorResponse } = extractUploadedExcelFile(request, context);
+    if (errorResponse) return errorResponse;
 
-    // Get the file - check both 'file' and 'documents' field names
-    const uploadedFile = request.files.file || request.files.documents || Object.values(request.files)[0];
-
-    if (!uploadedFile || !uploadedFile.data) {
-      return {
-        status: 400,
-        jsonBody: {
-          success: false,
-          message: 'Invalid file upload. File data is missing.'
-        }
-      };
-    }
-
-    context.log('Processing file:', {
-      name: uploadedFile.originalname,
-      size: uploadedFile.size,
-      mimetype: uploadedFile.mimetype
-    });
-
-    // Validate file type - should be Excel
-    const validExcelTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'application/vnd.ms-excel', // .xls
-      'application/vnd.oasis.opendocument.spreadsheet' // .ods
-    ];
-
-    if (!validExcelTypes.includes(uploadedFile.mimetype)) {
-      return {
-        status: 400,
-        jsonBody: {
-          success: false,
-          message: `Invalid file type. Expected Excel file (.xlsx, .xls), got ${uploadedFile.mimetype}`
-        }
-      };
-    }
-
-    // Process the Excel file
-    const result = await importFromExcel({
-      buffer: uploadedFile.data,
-      upsert: true
-    });
+    const result = await importFromExcel({ buffer: file.data, upsert: true });
 
     context.log('Import completed:', result);
 
@@ -77,15 +113,40 @@ async function importExcel(request, context) {
     };
 
   } catch (err) {
-    context.error('Import error:', err);
+    return fileValidationOrServerError(err, context, 'Import file');
+  }
+}
+
+/**
+ * Dry-run a CSV/Excel import: parses, validates, and detects new
+ * services/sub-services, but writes nothing to the database.
+ * POST /ca/import/preview
+ */
+async function previewImport(request, context) {
+  try {
+    const { file, errorResponse } = extractUploadedExcelFile(request, context);
+    if (errorResponse) return errorResponse;
+
+    const result = await previewExcel({ buffer: file.data, upsert: true });
+
+    context.log('Import preview completed:', {
+      total: result.total,
+      skipped: result.skipped,
+      newServices: result.newServicesDetected?.length || 0,
+      newSubServices: result.newSubServicesDetected?.length || 0
+    });
+
     return {
-      status: 500,
+      status: 200,
       jsonBody: {
-        success: false,
-        message: 'Failed to import file',
-        error: err.message
+        success: true,
+        message: result.message || 'File parsed successfully',
+        data: result
       }
     };
+
+  } catch (err) {
+    return fileValidationOrServerError(err, context, 'Preview file');
   }
 }
 
@@ -303,6 +364,12 @@ async function searchSubmissions(request, context) {
 
     // ---------------- PARAMS ----------------
     const searchQuery = decodeParam(query.q);
+
+    // Dynamic service list (replaces the old hardcoded SERVICES array) -
+    // only needed when there's a text query to score/match services against.
+    const services = searchQuery
+      ? await ServiceManagementService.getAllServices({ activeOnly: true })
+      : [];
     const state = decodeParam(query.state);
     const city = decodeParam(query.city);
     const servicesParam = decodeParam(query.services);
@@ -339,16 +406,16 @@ async function searchSubmissions(request, context) {
       }
 
       // Add conditions for each service
-      SERVICES.forEach(service => {
+      services.forEach(service => {
         // 1. If the searchQuery itself matches the service name, include anyone who offers it
         const serviceNameRegex = new RegExp(escapedQuery, 'i');
         if (serviceNameRegex.test(service.name)) {
-          orConditions.push({ [`services.${service.key}.offered`]: true });
+          orConditions.push({ [`services.${service.alias}.offered`]: true });
         }
 
         // 2. Also keep the existing logic that searches inside service details
         orConditions.push({
-          [`services.${service.key}.details`]: {
+          [`services.${service.alias}.details`]: {
             $regex: new RegExp(
               `(?:^|,)\\s*(${escapedQuery})\\s*(?:,|$)`,
               'i'
@@ -510,7 +577,7 @@ async function searchSubmissions(request, context) {
       const primaryFields = [
         'name', 'email', 'newEmail',
         'otherServices',
-        ...SERVICES.map(s => `services.${s.key}.details`)
+        ...services.map(s => `services.${s.alias}.details`)
       ];
 
       // ---- SECONDARY fields: location, contact, freetext ----
@@ -786,16 +853,20 @@ async function getServiceStats(request, context) {
     // Total docs (you can add { isActive: true } if needed)
     const totalCAs = await CaSubmission.countDocuments();
 
-    // Uses the static method defined on the schema
-    const statsByName = await CaSubmission.getServiceStats();
+    // Dynamic service list (replaces the old hardcoded SERVICES array)
+    const services = await ServiceManagementService.getAllServices({ activeOnly: true });
 
     const detailedStats = await Promise.all(
-      SERVICES.map(async (service) => {
-        const count = statsByName[service.name] || 0;
+      services.map(async (service) => {
+        // "Other Services" is tracked via the free-text otherServices field,
+        // not a services.<alias>.offered flag - same special case as before.
+        const filter = service.alias === 'other'
+          ? { otherServices: { $exists: true, $regex: /\S/ } }
+          : { [`services.${service.alias}.offered`]: true };
 
-        const sampleCAs = await CaSubmission.find({
-          [`services.${service.key}.offered`]: true
-        })
+        const count = await CaSubmission.countDocuments(filter);
+
+        const sampleCAs = await CaSubmission.find(filter)
           .select('name city state')
           .limit(5)
           .lean();
@@ -806,9 +877,9 @@ async function getServiceStats(request, context) {
             : 0;
 
         return {
-          id: service.id,
+          id: service._id,
           name: service.name,
-          key: service.key,
+          key: service.alias,
           count,
           percentage,
           sampleCAs
@@ -1264,11 +1335,15 @@ async function validateCaContacts(request, context) {
  */
 async function getMasterServices(request, context) {
   try {
+    // Public, active-only view - pending/inactive services are only visible
+    // via the authenticated /ca/services admin endpoints.
+    const data = await ServiceManagementService.getAllServices({ activeOnly: true });
+
     return {
       status: 200,
       jsonBody: {
         success: true,
-        data: SERVICES
+        data
       }
     };
   } catch (err) {
@@ -1286,6 +1361,7 @@ async function getMasterServices(request, context) {
 
 module.exports = {
   importExcel,
+  previewImport,
   getSubmissions,
   getSubmissionById,
   searchSubmissions,

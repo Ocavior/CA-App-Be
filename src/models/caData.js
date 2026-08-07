@@ -1,158 +1,19 @@
 // models/CaSubmission.js
 const mongoose = require('mongoose');
 
-// Service list for reference
-const SERVICES = [
-  {
-    id: 1,
-    name: 'Income Tax Consultancy',
-    key: 'incomeTax',
-    subServices: ['Compliance', 'Litigation Assessment', 'Litigation CIT Appeal', 'Litigation ITAT', 'Tax Planning', 'Tax Audit', '12A / 80G registration support']
-  },
-  {
-    id: 2,
-    name: 'GST Law Consultancy',
-    key: 'gstLaw',
-    subServices: ['Compliance', 'Litigation Audit Assessment', 'Litigation - Appeals', 'High Court Litigation', 'Opinion', 'REGISTRATIONS']
-  },
-  {
-    id: 3,
-    name: 'Company Law Consultancy',
-    key: 'companyLaw',
-    subServices: ['company incorporation', 'Compliance', 'Litigation', 'Sale/purchase of company', 'Statutory Audit', 'ESI & PF compliance', 'ESI & PF Litigation', 'ESI & PF Registration']
-  },
-  {
-    id: 4,
-    name: 'International Tax Consultancy',
-    key: 'internationalTax',
-    subServices: ['Transaction advisory', 'Transaction structuring', 'CBC reporting', 'TP study', 'TP Audit', 'NRI Tax Advisory']
-  },
-  {
-    id: 5,
-    name: 'Start-Up Consultancy',
-    key: 'startup',
-    subServices: ['Counselling', 'Startup India Registration', 'Fundraising - Debt', 'Fundraising - Equity', 'preparation of financial model, pitch deck etc.']
-  },
-  {
-    id: 6,
-    name: 'Accounting',
-    key: 'accounting',
-    subServices: ['INDIAN ACCOUNTING', 'PREPARATION OF FS/FINALIZATION OF FS']
-  },
-  {
-    id: 7,
-    name: 'Investment & Succession Planning',
-    key: 'investmentSuccession',
-    subServices: ['Investment planning for individual', 'Investment planning for corporates', 'succession planning for businesses', 'project financing /Loan work']
-  },
-  {
-    id: 8,
-    name: 'Registration Services',
-    key: 'registration',
-    subServices: ['FSSAI REGISTRATIONS', 'Trademark, Patent, Copyright Registration', 'ISO REGISTRATIONS', 'legal METROLOGY REGISTRATIONS', 'TRADE LICENSE', 'shops n establishment license', 'RERA LICENSE', 'PSARA', 'TRUST REGISTRATIONS', 'SOCIETY REGISTRATIONS', 'APEDA', 'FACTORY LICENSE', 'Pollution NOC', 'FULL FLEDGED MONEY CHANGER LICENSE REGISTRATIONS (ffmc)', 'PROFESSIONAL TAX REGISTRATIONS', 'SAFTA', 'AGMARK', 'ISBN', 'EPR', 'ISI MARK', 'cdsco - drug license', 'bis certification', 'SOC (all service organisation certification)', 'Insurance Provider Registration (ISNP)']
-  },
-  {
-    id: 9,
-    name: 'Audits',
-    key: 'audits',
-    subServices: ['Bank Audits', 'Revenue Audit', 'Stock Audit', 'System Audit', 'IT Audit', 'Internal Audit or ICFR Audit', 'SOP Preparations (std operating procedure)', 'cyber security audit', 'ISO Audit', 'SOX Audit']
-  },
-  {
-    id: 10,
-    name: 'FEMA, FCRA',
-    key: 'femaFcra',
-    subServices: ['FEMA - Compliance', 'FEMA - Litigation', 'FCRA - Compliance', 'FCRA - Litigation']
-  },
-  {
-    id: 11,
-    name: 'PMLA, Benami & Black Money Consultancy',
-    key: 'pmlaBenami',
-    subServices: ['Preventive analysis', 'Reply To Notice', 'Representation']
-  },
-  {
-    id: 12,
-    name: 'NBFC Assistance',
-    key: 'nbfc',
-    subServices: ['REGISTRATION', 'COMPLIANCES', 'Litigation (no level)']
-  },
-  {
-    id: 13,
-    name: 'GEM Portal Support',
-    key: 'gemPortal',
-    subServices: ['GEM ID/Registration', 'Product Registration', 'Tender Support']
-  },
-  {
-    id: 14,
-    name: 'Forensic Analysis/Audit/Investigation',
-    key: 'forensic',
-    subServices: ['forensic audit under IBC', 'Forensic audit ordered by bank', 'Forensic audit ordered by company', 'INVESTIGATION AND DISPUTE ADVISORY']
-  },
-  {
-    id: 15,
-    name: 'IBC Consultancy',
-    key: 'ibc',
-    subServices: ['Yourself IRP or RP (interim resolution professional or resolution professional)', 'Ibc advisory', 'REPRESENTATION FOR PERSONAL GUARANTORS', 'Liquidation support']
-  },
-  {
-    id: 16,
-    name: 'Valuation Services',
-    key: 'valuation',
-    subServices: ['securities & financial instrument valuation', 'business valuation', 'valuation under IBC', 'valuation for due diligence', 'LAND & BUILDING VALUATIONS', 'Other asset valuation']
-  },
-  {
-    id: 17,
-    name: 'IND-AS Consultancy',
-    key: 'indAs',
-    subServices: ['FS (financial statements) preparation', 'FS conversion', 'Review or consulting on transactions', 'NFRA litigation']
-  },
-  {
-    id: 18,
-    name: 'Virtual CEOs/CFOs/Independent Directors',
-    key: 'virtualCxo',
-    subServices: ['yourself virtual cfo or ceo', 'identification of virtual ceo or cfo', 'yourself independent director', 'identification of independent director']
-  },
-  {
-    id: 19,
-    name: 'Competition Act Consultancy',
-    key: 'competitionAct',
-    subServices: ['preventive analysis', 'reply to notice', 'representation']
-  },
-  {
-    id: 20,
-    name: 'IPO Consulting',
-    key: 'ipo',
-    subServices: ['Sme ipo', 'Underwriting', 'Mainboard ipo', 'FPO', 'Social stock exchange support']
-  },
-  {
-    id: 21,
-    name: 'SEZ Consulting',
-    key: 'sez',
-    subServices: ['Notification', 'de-notification', 'compliances']
-  },
-  {
-    id: 22,
-    name: 'Foreign Accounting & Taxation',
-    key: 'foreignAccounting',
-    subServices: ['Foreign Accounting', 'Foreign Taxation', 'Foreign Audit']
-  },
-  {
-    id: 23,
-    name: 'Govt Subsidies',
-    key: 'govtSubsidies',
-    subServices: ['State Subsidy', 'Central Subsidy']
-  },
-  {
-    id: 24,
-    name: 'Other Services',
-    key: 'other',
-    subServices: []
-  }
-];
-
-// Individual service schema - stores both flag and details
+// Sub-service offering: alias -> whether the CA offers it
+// Individual service schema - stores offered flag, free-text overflow, and
+// structured sub-service flags. Service/sub-service master data (names,
+// aliases, the list of what exists) now lives in the Service collection
+// (models/service.js) instead of being hardcoded here.
 const ServiceDetailSchema = new mongoose.Schema({
   offered: { type: Boolean, default: false },        // Whether they offer this service
-  details: { type: String, trim: true }              // Descriptive text about the service
+  details: { type: String, trim: true },              // Free-text overflow: raw/unmatched text from import, or manual notes
+  subServices: {
+    type: Map,
+    of: Boolean,                                       // sub-service alias -> offered
+    default: () => new Map()
+  }
 }, { _id: false });
 
 const CaSubmissionSchema = new mongoose.Schema({
@@ -221,104 +82,14 @@ const CaSubmissionSchema = new mongoose.Schema({
     trim: true
   }],
 
-  // Detailed service offerings - Each service has both a flag and details
+  // Detailed service offerings - keyed by Service.alias (dynamic, not a
+  // fixed field list). Each entry: { offered, details, subServices }.
+  // Stored as a Map so it serializes to a plain object on .lean()/.toJSON()
+  // (e.g. services.incomeTax.offered) exactly like the old fixed-field shape.
   services: {
-    incomeTax: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    gstLaw: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    companyLaw: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    internationalTax: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    startup: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    accounting: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    investmentSuccession: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    registration: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    audits: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    femaFcra: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    pmlaBenami: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    nbfc: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    gemPortal: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    forensic: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    ibc: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    valuation: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    indAs: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    virtualCxo: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    competitionAct: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    ipo: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    sez: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    foreignAccounting: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    govtSubsidies: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    },
-    other: {
-      type: ServiceDetailSchema,
-      default: () => ({})
-    }
+    type: Map,
+    of: ServiceDetailSchema,
+    default: () => new Map()
   },
 
   // Additional service-specific details
@@ -389,11 +160,6 @@ CaSubmissionSchema.index({ createdAt: -1 });
 CaSubmissionSchema.index({ timestamp: -1 });
 CaSubmissionSchema.index({ source: 1, createdAt: -1 });
 
-// Service offering indexes for filtering
-CaSubmissionSchema.index({ 'services.incomeTax.offered': 1 });
-CaSubmissionSchema.index({ 'services.gstLaw.offered': 1 });
-CaSubmissionSchema.index({ 'services.companyLaw.offered': 1 });
-
 // Text index for full-text search
 CaSubmissionSchema.index({
   name: 'text',
@@ -405,14 +171,18 @@ CaSubmissionSchema.index({
 });
 
 // ==================== VIRTUALS ====================
-// Get list of all services offered (boolean true)
-CaSubmissionSchema.virtual('offeredServices').get(function () {
+// Get list of service aliases offered (boolean true).
+// NOTE: this returns aliases, not display names - resolving display names
+// now requires a DB lookup against the Service collection (see
+// ServiceManagementService.getAllServices), which a synchronous virtual
+// can't do.
+CaSubmissionSchema.virtual('offeredServiceAliases').get(function () {
   const offered = [];
-  for (const [key, value] of Object.entries(this.services)) {
-    if (value && value.offered) {
-      const service = SERVICES.find(s => s.key === key);
-      offered.push(service ? service.name : key);
-    }
+  const entries = this.services instanceof Map
+    ? this.services.entries()
+    : Object.entries(this.services || {});
+  for (const [alias, value] of entries) {
+    if (value && value.offered) offered.push(alias);
   }
   return offered;
 });
@@ -420,35 +190,37 @@ CaSubmissionSchema.virtual('offeredServices').get(function () {
 // Get count of services offered
 CaSubmissionSchema.virtual('serviceCount').get(function () {
   let count = 0;
-  for (const value of Object.values(this.services)) {
+  const values = this.services instanceof Map
+    ? this.services.values()
+    : Object.values(this.services || {});
+  for (const value of values) {
     if (value && value.offered) count++;
   }
   return count;
 });
 
 // ==================== METHODS ====================
-// Instance method to update a service
-CaSubmissionSchema.methods.updateService = function (serviceKey, offered, details = null) {
-  if (!this.services[serviceKey]) {
-    throw new Error(`Invalid service key: ${serviceKey}`);
-  }
-  this.services[serviceKey].offered = offered;
-  if (details !== null) {
-    this.services[serviceKey].details = details;
-  }
+// Instance method to update a service (creates the entry if it doesn't exist yet)
+CaSubmissionSchema.methods.updateService = function (serviceAlias, offered, details = null) {
+  const current = this.services.get(serviceAlias) || {};
+  this.services.set(serviceAlias, {
+    ...current,
+    offered,
+    ...(details !== null ? { details } : {})
+  });
   return this;
 };
 
 // Instance method to get service details
-CaSubmissionSchema.methods.getService = function (serviceKey) {
-  return this.services[serviceKey];
+CaSubmissionSchema.methods.getService = function (serviceAlias) {
+  return this.services.get(serviceAlias);
 };
 
 // ==================== STATIC METHODS ====================
 // Find CAs offering a specific service
-CaSubmissionSchema.statics.findByService = function (serviceKey) {
+CaSubmissionSchema.statics.findByService = function (serviceAlias) {
   const query = {};
-  query[`services.${serviceKey}.offered`] = true;
+  query[`services.${serviceAlias}.offered`] = true;
   return this.find(query);
 };
 
@@ -460,39 +232,13 @@ CaSubmissionSchema.statics.findByLocation = function (state, city = null) {
 };
 
 // Find CAs offering multiple services
-CaSubmissionSchema.statics.findByServices = function (serviceKeys) {
+CaSubmissionSchema.statics.findByServices = function (serviceAliases) {
   const query = {
-    $and: serviceKeys.map(key => ({
-      [`services.${key}.offered`]: true
+    $and: serviceAliases.map(alias => ({
+      [`services.${alias}.offered`]: true
     }))
   };
   return this.find(query);
-};
-
-// Get service statistics
-CaSubmissionSchema.statics.getServiceStats = async function () {
-  const stats = {};
-
-  for (const service of SERVICES) {
-    let count = 0;
-
-    // ✅ Special case: Other Services
-    if (service.key === 'other') {
-      count = await this.countDocuments({
-        otherServices: { $exists: true, $ne: '' }
-      });
-    }
-    // ✅ All normal services
-    else {
-      count = await this.countDocuments({
-        [`services.${service.key}.offered`]: true
-      });
-    }
-
-    stats[service.name] = count;
-  }
-
-  return stats;
 };
 
 // ==================== VALIDATION ====================
@@ -518,4 +264,3 @@ CaSubmissionSchema.pre('save', function (next) {
 const CaSubmission = mongoose.model('CaSubmission', CaSubmissionSchema);
 
 module.exports = CaSubmission;
-module.exports.SERVICES = SERVICES;
