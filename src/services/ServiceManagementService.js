@@ -25,15 +25,40 @@ async function createService(payload = {}) {
     alias = toAlias(payload.name, existing.map(s => s.alias));
   }
 
-  const subServices = Array.isArray(payload.subServices)
-    ? payload.subServices.map(ss => ({
-      name: ss.name,
-      alias: ss.alias || toAlias(ss.name),
-      isOfferedDefault: !!ss.isOfferedDefault,
-      isActive: ss.isActive !== false,
-      source: ss.source || 'manual'
-    }))
-    : [];
+  const subServices = [];
+  if (Array.isArray(payload.subServices)) {
+    const usedSubAliases = [];
+
+    for (const ss of payload.subServices) {
+      if (!ss.name || !String(ss.name).trim()) {
+        const err = new Error('Sub-service name is required');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      let subAlias = ss.alias && String(ss.alias).trim();
+      if (!subAlias) {
+        // Collision-check against sub-services already processed in this
+        // same request, not just against the DB - otherwise two inline
+        // sub-services with the same/similar name would silently end up
+        // with the same alias on this service.
+        subAlias = toAlias(ss.name, usedSubAliases);
+      } else if (usedSubAliases.some(a => a.toLowerCase() === subAlias.toLowerCase())) {
+        const err = new Error(`Duplicate sub-service alias "${subAlias}" in request`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      usedSubAliases.push(subAlias);
+      subServices.push({
+        name: ss.name.trim(),
+        alias: subAlias,
+        isOfferedDefault: !!ss.isOfferedDefault,
+        isActive: ss.isActive !== false,
+        source: ss.source || 'manual'
+      });
+    }
+  }
 
   const service = await Service.create({
     name: payload.name.trim(),

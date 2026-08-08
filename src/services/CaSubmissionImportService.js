@@ -3,6 +3,7 @@ const XLSX = require('xlsx');
 const CaSubmission = require('../models/caData');
 const ServiceManagementService = require('../services/ServiceManagementService');
 const { normalizeName } = require('../utils/aliasUtils');
+const { cleanPhoneNumber, last10Digits } = require('../utils/phoneUtils');
 
 // Core (fixed) field header mapping - these are genuine, unchanging CA
 // fields, unlike services which are now dynamic (see Service model) and
@@ -157,19 +158,6 @@ function parseDate(value) {
   }
 
   return null;
-}
-
-function cleanPhoneNumber(phone) {
-  if (!phone) return '';
-
-  let cleaned = String(phone).replace(/[^\d+]/g, '').trim();
-  cleaned = cleaned.replace(/^0+/, '');
-
-  if (cleaned.length === 10 && /^\d+$/.test(cleaned)) {
-    return '+91' + cleaned;
-  }
-
-  return cleaned;
 }
 
 function parseTop3Services(value) {
@@ -408,6 +396,28 @@ async function mapRowToDoc(raw, headerRowMap, matchCtx) {
 }
 
 /**
+ * Build the query used to find an existing CaSubmission matching this row,
+ * plus a stable string key for detecting duplicate rows within the same
+ * import batch. Matches on the last 10 digits of the phone number rather
+ * than an exact string, so it finds existing records regardless of whether
+ * their mobile field happens to be stored with or without a +91 prefix
+ * (manual creation and CSV import didn't always normalize the same way).
+ */
+function buildMatchQuery(doc) {
+  if (doc.mobile) {
+    const last10 = last10Digits(doc.mobile);
+    if (last10) {
+      return { query: { mobile: { $regex: last10 + '$' } }, key: `mobile:${last10}` };
+    }
+    return { query: { mobile: doc.mobile }, key: `mobile:${doc.mobile}` };
+  }
+  if (doc.email) {
+    return { query: { email: doc.email }, key: `email:${doc.email}` };
+  }
+  return { query: { name: doc.name }, key: `name:${doc.name}` };
+}
+
+/**
  * Shared parse -> validate -> (optionally) commit pipeline for both preview
  * and real import. commit=false performs no database writes at all.
  */
@@ -454,6 +464,10 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
   let inserted = 0, updated = 0, skipped = 0;
   const errors = [];
   const sampleRows = [];
+  // Tracks which row first claimed each match key, so a later row in the
+  // same file that resolves to the same person doesn't silently overwrite
+  // the earlier row's data with no explanation.
+  const seenKeys = new Map();
 
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i];
@@ -467,18 +481,33 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
         continue;
       }
 
+      const { query, key } = buildMatchQuery(doc);
+
+      const firstRow = seenKeys.get(key);
+      if (firstRow) {
+        skipped++;
+        errors.push({
+          row: i + 2,
+          error: `Duplicate of row ${firstRow} within this file (same ${key.split(':')[0]}) - skipped so it doesn't overwrite row ${firstRow}'s data`,
+          data: raw
+        });
+        continue;
+      }
+      seenKeys.set(key, i + 2);
+
       if (!commit && sampleRows.length < 10) {
         sampleRows.push({ row: i + 2, mapped: doc });
       }
 
-      if (!commit) continue; // preview: validate + detect only, no DB writes
+      if (!commit) {
+        // Preview: forecast insert vs update with a read-only lookup, write nothing.
+        const existing = upsert ? await CaSubmission.findOne(query).select('_id').lean() : null;
+        if (existing) updated++;
+        else inserted++;
+        continue;
+      }
 
       if (upsert) {
-        const query = {};
-        if (doc.mobile) query.mobile = doc.mobile;
-        else if (doc.email) query.email = doc.email;
-        else query.name = doc.name;
-
         const existing = await CaSubmission.findOne(query).select('_id').lean();
 
         await CaSubmission.findOneAndUpdate(
@@ -511,7 +540,7 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
     errorCount: errors.length,
     message: commit
       ? `Successfully processed ${inserted + updated} records (${inserted} new, ${updated} updated), ${skipped} skipped`
-      : `Preview parsed ${rows.length} row(s): ${rows.length - skipped} would be processed, ${skipped} would be skipped`
+      : `Preview parsed ${rows.length} row(s): ${inserted} would be new, ${updated} would be updated, ${skipped} would be skipped`
   };
 
   if (!commit) {
@@ -551,8 +580,17 @@ async function createCaSubmission(payload) {
     data.source = 'manual';
   }
 
+  // Normalize the same way CSV import does, so a manually-created record's
+  // mobile format doesn't drift from what import matching expects.
+  if (data.mobile) {
+    data.mobile = cleanPhoneNumber(data.mobile);
+  }
+
   const doc = await CaSubmission.create(data);
-  const obj = doc.toObject();
+  // flattenMaps: without it, Map-typed fields (services) serialize to `{}`
+  // when the response is JSON-stringified - the save itself is correct,
+  // but the echoed-back document would look like it lost the data.
+  const obj = doc.toObject({ flattenMaps: true });
 
   if (obj.rawData !== undefined) {
     delete obj.rawData;
@@ -566,6 +604,10 @@ async function createCaSubmission(payload) {
  */
 async function updateCaSubmission(id, payload) {
   const data = pickAllowedFields(payload);
+
+  if (data.mobile) {
+    data.mobile = cleanPhoneNumber(data.mobile);
+  }
 
   const updated = await CaSubmission
     .findByIdAndUpdate(
