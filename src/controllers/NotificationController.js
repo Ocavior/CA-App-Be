@@ -2,7 +2,8 @@
 const axios = require('axios');
 const { EmailApiService } = require('../services/EmailApiService');
 
-const WHATSAPP_API_BASE = 'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL
+  || 'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
 const WHATSAPP_BULK_API = `${WHATSAPP_API_BASE}/send/bulk`;
 const WHATSAPP_SEND_TEXT_API = `${WHATSAPP_API_BASE}/send/text`;
 const WHATSAPP_SEND_TEMPLATE_API = `${WHATSAPP_API_BASE}/send/template`;

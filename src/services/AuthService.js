@@ -5,8 +5,8 @@ const User = require('../models/admin');
 const { logError } = require('../utils/logError');
 const constants = require('../config/app.config');
 const axios = require('axios');
-const WHATSAPP_API_BASE =
-    'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL
+    || 'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
 
 class AuthService {
 
