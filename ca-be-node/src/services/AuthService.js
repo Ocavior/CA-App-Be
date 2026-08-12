@@ -1,0 +1,624 @@
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const User = require('../models/admin');
+const { logError } = require('../utils/logError');
+const constants = require('../config/app.config');
+const axios = require('axios');
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL
+    || 'https://whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io/api/whatsapp';
+
+class AuthService {
+
+    /**
+     * Generate JWT token for user
+     */
+    static async generateTokens(user) {
+        try {
+            const jwtAccessToken = jwt.sign(
+                {
+                    userId: user._id,
+                    email: user.email,
+                    username: user.username,
+                    role: user.role
+                },
+                constants.JWT_SECRET,
+                { expiresIn: constants.JWT_EXPIRE }
+            );
+            return { jwtAccessToken };
+        } catch (error) {
+            throw logError('generateTokens', error, { userId: user._id });
+        }
+    }
+
+    /**
+     * Generate a 6-digit OTP
+     */
+    static generateOTP() {
+        try {
+            return Math.floor(100000 + Math.random() * 900000).toString();
+        } catch (error) {
+            throw logError('generateOTP', error);
+        }
+    }
+
+    /**
+     * Send password reset email (placeholder - implement with your email service)
+     */
+    static async sendPasswordResetEmail(email, otp) {
+        try {
+            console.log(`Sending password reset OTP to: ${email}`);
+            console.log(`OTP: ${otp}`);
+
+            // TODO: Implement actual email sending logic here
+            // Example: await EmailService.sendEmail({ to: email, subject: 'Password Reset', body: `Your OTP is: ${otp}` });
+
+            return { success: true };
+        } catch (error) {
+            throw logError('sendPasswordResetEmail', error, { email });
+        }
+    }
+
+    /**
+     * Register a new user
+     */
+    static async registerUser(userData) {
+        try {
+            const { username, email, password, phoneNumber, device_id, device_token, device_name, role = 'admin' } = userData;
+
+            // Validate required fields
+            if (!username || !password) {
+                throw new Error('Username and password are required');
+            }
+
+            // Check if user already exists
+            const existingUser = await User.findOne({
+                $or: [
+                    { username: username.toLowerCase() },
+                ]
+            });
+
+            if (existingUser) {
+                if (existingUser.username === username.toLowerCase()) {
+                    throw new Error('Username already taken');
+                }
+            }
+
+            // Hash password
+            const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            // Create user
+            const user = await User.create({
+                username: username.toLowerCase(),
+                email: email.toLowerCase(),
+                password: hashedPassword,
+                phoneNumber,
+                role
+            });
+
+            // Generate token
+            const { jwtAccessToken } = await this.generateTokens(user);
+
+
+
+            if (device_id && device_token) {
+                const deviceRegistration = await this.registerDevice({
+                    device_id,
+                    device_token,
+                    device_name
+                });
+                console.log('Device registration successful:', deviceRegistration);
+            }
+
+            return {
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    phoneNumber: user.phoneNumber,
+                    role: user.role
+                },
+                token: jwtAccessToken
+            };
+        } catch (error) {
+            throw logError('registerUser', error, { email: userData.email });
+        }
+    }
+
+    /**
+     * Login user with username/email and password
+     */
+    static async loginUser(credentials) {
+        try {
+            const { identifier, password, device_id, device_token, device_name } = credentials; // identifier can be username or email
+            console.log("payloads : ", credentials);
+            if (!identifier || !password) {
+                throw new Error('Username/email and password are required');
+            }
+
+            // Find user by username or email
+            const user = await User.findOne({
+                $or: [
+                    { email: identifier.toLowerCase() },
+                    { username: identifier.toLowerCase() }
+                ]
+            });
+
+            if (!user) {
+                throw new Error('Invalid credentials');
+            }
+
+            // Verify password
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                throw new Error('Invalid credentials');
+            }
+
+            // Generate token
+            const { jwtAccessToken } = await this.generateTokens(user);
+
+            if (device_id && device_token) {
+                const deviceRegistration = await this.registerDevice({
+                    device_id,
+                    device_token,
+                    device_name
+                });
+                console.log('Device registration successful:', deviceRegistration);
+            }
+
+            return {
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    phoneNumber: user.phoneNumber,
+                    role: user.role
+                },
+                token: jwtAccessToken
+            };
+        } catch (error) {
+            throw logError('loginUser', error, { identifier: credentials.identifier });
+        }
+    }
+
+    /**
+     * Create operational user (admin only)
+     */
+    // inside AuthService
+    static async createUser(userData) {
+        try {
+            const { username, email, password, phoneNumber } = userData;
+            let { role } = userData;
+
+            // Validate required fields
+            if (!username || !email || !password || !phoneNumber) {
+                throw new Error('Username, email, password, and phone number are required');
+            }
+
+            // Normalize role and restrict to allowed values
+            const allowedRoles = ['admin', 'operational'];
+            if (!role || !allowedRoles.includes(role)) {
+                role = 'operational'; // default when invalid/missing
+            }
+
+            const normalizedEmail = email.toLowerCase();
+            const normalizedUsername = username.toLowerCase();
+
+            // Check if user already exists 
+            const existingUser = await User.findOne({
+                $or: [
+                    { email: normalizedEmail },
+                    { username: normalizedUsername },
+                    { phoneNumber }
+                ]
+            });
+
+            if (existingUser) {
+                if (existingUser.email === normalizedEmail) {
+                    throw new Error('User already exists with this email');
+                }
+                if (existingUser.username === normalizedUsername) {
+                    throw new Error('Username already taken');
+                }
+                if (existingUser.phoneNumber === phoneNumber) {
+                    throw new Error('Phone number already registered');
+                }
+            }
+
+            // Hash password
+            const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            // Create user (admin or operational)
+            const user = await User.create({
+                username: normalizedUsername,
+                email: normalizedEmail,
+                password: hashedPassword,
+                phoneNumber,
+                role
+            });
+
+            return {
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    phoneNumber: user.phoneNumber,
+                    role: user.role
+                }
+            };
+        } catch (error) {
+            throw logError('createUser', error, { email: userData.email });
+        }
+    }
+
+
+    /**
+     * Request password reset
+     */
+    static async resetPasswordRequest(email) {
+        try {
+            // Find user
+            const user = await User.findOne({ email: email.toLowerCase() });
+            if (!user) {
+                throw new Error('User not found with this email');
+            }
+
+            // Generate OTP
+            const otp = this.generateOTP();
+
+            // Store OTP and expiry (1 hour)
+            user.resetPasswordToken = otp;
+            user.resetPasswordExpire = new Date(Date.now() + 3600000);
+            await user.save();
+
+            // Send email
+            await this.sendPasswordResetEmail(email, otp);
+
+            return {
+                success: true,
+                message: 'Password reset OTP sent to your email'
+            };
+        } catch (error) {
+            throw logError('resetPasswordRequest', error, { email });
+        }
+    }
+
+    /**
+     * Verify reset token
+     */
+    static async verifyResetToken(email, token) {
+        try {
+            const user = await User.findOne({ email: email.toLowerCase() });
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            if (!user.resetPasswordToken) {
+                throw new Error('No reset token found for this user');
+            }
+
+            if (user.resetPasswordToken !== token) {
+                throw new Error('Invalid reset token');
+            }
+
+            if (user.resetPasswordExpire < Date.now()) {
+                throw new Error('Reset token has expired');
+            }
+
+            return true;
+        } catch (error) {
+            throw logError('verifyResetToken', error, { email });
+        }
+    }
+
+    /**
+     * Reset password
+     */
+    static async resetPassword(email, token, newPassword) {
+        try {
+            // Verify token first
+            await this.verifyResetToken(email, token);
+
+            const user = await User.findOne({ email: email.toLowerCase() });
+
+            // Hash new password
+            const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+            const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+            // Update password and clear reset fields
+            user.password = hashedPassword;
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save();
+
+            return {
+                success: true,
+                message: 'Password reset successful'
+            };
+        } catch (error) {
+            throw logError('resetPassword', error, { email });
+        }
+    }
+
+    /**
+     * Handle Google OAuth callback
+     */
+    static async handleGoogleCallback(googleUserData) {
+        try {
+            const { user, credential, profile } = googleUserData;
+
+            if (!profile || !profile.email) {
+                throw new Error('Invalid Google profile data');
+            }
+
+            // Find existing user
+            let existingUser = await User.findOne({ email: profile.email.toLowerCase() });
+
+            if (!existingUser) {
+                // Create new user from Google profile
+                // Generate a random password (user won't use it for Google login)
+                const randomPassword = crypto.randomBytes(32).toString('hex');
+                const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+                const hashedPassword = await bcrypt.hash(randomPassword, salt);
+
+                // Generate username from email
+                const baseUsername = profile.email.split('@')[0].toLowerCase();
+                let username = baseUsername;
+                let counter = 1;
+
+                // Ensure unique username
+                while (await User.findOne({ username })) {
+                    username = `${baseUsername}${counter}`;
+                    counter++;
+                }
+
+                existingUser = await User.create({
+                    username,
+                    email: profile.email.toLowerCase(),
+                    password: hashedPassword,
+                    phoneNumber: '', // Will need to be updated later
+                    role: 'operational'
+                });
+            }
+
+            // Generate token
+            const { jwtAccessToken } = await this.generateTokens(existingUser);
+
+            return {
+                user: {
+                    _id: existingUser._id,
+                    username: existingUser.username,
+                    email: existingUser.email,
+                    phoneNumber: existingUser.phoneNumber,
+                    role: existingUser.role
+                },
+                token: jwtAccessToken
+            };
+        } catch (error) {
+            throw logError('handleGoogleCallback', error, { email: googleUserData?.profile?.email });
+        }
+    }
+
+    static async getAdminUsers({ role } = {}) {
+        const query = {};
+
+        // Validate & apply role filter if provided
+        if (role) {
+            const allowedRoles = ['admin', 'operational'];
+            if (!allowedRoles.includes(role)) {
+                const err = new Error('Invalid role provided');
+                err.statusCode = 400;
+                throw err;
+            }
+            query.role = role;
+        }
+
+        // Fetch users (no password)
+        const users = await User.find(query).select('-password');
+
+        // Counts for both roles
+        const [adminCount, operationalCount] = await Promise.all([
+            User.countDocuments({ role: 'admin' }),
+            User.countDocuments({ role: 'operational' })
+        ]);
+
+        return {
+            users,
+            counts: {
+                admin: adminCount,
+                operational: operationalCount
+            }
+        };
+    }
+
+    // Add these methods to the AuthService class
+
+    /**
+     * Delete user account (self-deletion)
+     */
+    static async deleteUser(userId) {
+        try {
+            const user = await User.findById(userId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            await User.findByIdAndDelete(userId);
+
+            return {
+                success: true,
+                message: 'User account deleted successfully'
+            };
+        } catch (error) {
+            throw logError('deleteUser', error, { userId });
+        }
+    }
+
+    /**
+     * Delete user by admin
+     */
+    static async deleteUserByAdmin(targetUserId) {
+        try {
+            const user = await User.findById(targetUserId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            await User.findByIdAndDelete(targetUserId);
+
+            return {
+                success: true,
+                message: 'User deleted successfully'
+            };
+        } catch (error) {
+            throw logError('deleteUserByAdmin', error, { targetUserId });
+        }
+    }
+
+    /**
+     * Update user by admin
+     */
+    static async updateUser(targetUserId, updateData) {
+        try {
+            const user = await User.findById(targetUserId);
+
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            const { username, email, phoneNumber, role, password } = updateData;
+
+            // Build update object with only provided fields
+            const updates = {};
+
+            if (username !== undefined) {
+                const normalizedUsername = username.toLowerCase();
+
+                // Check if username is already taken by another user
+                const existingUser = await User.findOne({
+                    username: normalizedUsername,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Username already taken');
+                }
+
+                updates.username = normalizedUsername;
+            }
+
+            if (email !== undefined) {
+                const normalizedEmail = email.toLowerCase();
+
+                // Check if email is already taken by another user
+                const existingUser = await User.findOne({
+                    email: normalizedEmail,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Email already registered');
+                }
+
+                updates.email = normalizedEmail;
+            }
+
+            if (phoneNumber !== undefined) {
+                // Check if phone number is already taken by another user
+                const existingUser = await User.findOne({
+                    phoneNumber,
+                    _id: { $ne: targetUserId }
+                });
+
+                if (existingUser) {
+                    throw new Error('Phone number already registered');
+                }
+
+                updates.phoneNumber = phoneNumber;
+            }
+
+            if (role !== undefined) {
+                const allowedRoles = ['admin', 'operational'];
+                if (!allowedRoles.includes(role)) {
+                    throw new Error('Invalid role. Must be admin or operational');
+                }
+                updates.role = role;
+            }
+
+            if (password !== undefined) {
+                // Hash new password
+                const salt = await bcrypt.genSalt(parseInt(constants.SALT_ROUNDS || 10));
+                const hashedPassword = await bcrypt.hash(password, salt);
+                updates.password = hashedPassword;
+            }
+
+            // Update user
+            const updatedUser = await User.findByIdAndUpdate(
+                targetUserId,
+                { $set: updates },
+                { new: true, runValidators: true }
+            ).select('-password');
+
+            return {
+                user: {
+                    _id: updatedUser._id,
+                    username: updatedUser.username,
+                    email: updatedUser.email,
+                    phoneNumber: updatedUser.phoneNumber,
+                    role: updatedUser.role
+                }
+            };
+        } catch (error) {
+            throw logError('updateUser', error, { targetUserId });
+        }
+    }
+
+    static async registerDevice({ device_token, device_id, device_name = null }) {
+        if (!device_token || !device_id) {
+            throw new Error('device_token and device_id are required');
+        }
+
+        // Build query params dynamically
+        const queryParams = {
+            device_token,
+            device_id
+        };
+
+        // Only send device_name if present
+        if (device_name) {
+            queryParams.device_name = device_name;
+        }
+
+        try {
+            const response = await axios.post(
+                `${WHATSAPP_API_BASE}/register/device`,
+                null,
+                {
+                    params: queryParams,
+                    headers: {
+                        Accept: 'application/json'
+                    },
+                    timeout: 15000
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            const err = new Error(
+                error.response?.data?.message || 'Failed to register device'
+            );
+            err.statusCode = error.response?.status || 502;
+            err.details = error.response?.data;
+            throw err;
+        }
+    }
+
+
+}
+
+module.exports = AuthService;

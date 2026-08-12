@@ -285,6 +285,29 @@ describe('CA Submissions - CRUD', () => {
       expect(res.status).toBe(400);
       expect(res.body).toEqual({ success: false, message: 'Array of IDs is required' });
     });
+
+    // Platform-boundary characterization, verified directly against a live
+    // Azure Functions host (not assumed): request.json() on a genuinely
+    // empty body actually THROWS on the real platform - bulkDelete has no
+    // .catch() around its `(await request.json()) || {}` call, so that
+    // throw propagates to bulkDelete's own try/catch and comes back as a
+    // 500, not the clean 400 an empty-but-present `{}` body gets (see the
+    // test above). This is why several OTHER handlers (e.g.
+    // ServiceController.toggleServiceStatus) defensively wrap their own
+    // request.json() call in `.catch(() => ({}))` - bulkDelete just doesn't.
+    // ca-be-node's index.js adapter reproduces this exactly by letting
+    // JSON.parse('') throw naturally rather than special-casing an empty
+    // body to `null` - see ca-be-node/MIGRATION_NOTES.md.
+    it('a request with NO body at all (not even {}) 500s - request.json() throws, uncaught', async () => {
+      const res = await agent.delete(apiPath('/ca/submissions/bulk')).set(authHeader(token));
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Failed to delete submissions',
+        error: 'Unexpected end of JSON input'
+      });
+    });
   });
 
   describe('PATCH /ca/submissions/:id/active', () => {
