@@ -7,7 +7,7 @@ pre-existing bug is being knowingly preserved, or because swapping runtimes
 (Azure Functions v4 → Express) would otherwise silently change behavior on
 its own. Everything below is intentional. If you're here because something
 looks wrong, it probably already looked wrong in the original app too -
-check the referenced regression test before "fixing" it.
+check the referenced regression test before "fixing" it. 
 
 ## Architecture
 
