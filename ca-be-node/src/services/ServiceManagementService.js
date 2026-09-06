@@ -185,7 +185,7 @@ async function getAllServicesForMatching() {
 }
 
 /**
- * Create a new service flagged as pending review (inactive, source csv_import).
+ * Create a new service flagged as pending review (source csv_import).
  * Used when an import encounters a service name that matches nothing known.
  */
 async function createPendingService(name) {
@@ -195,7 +195,7 @@ async function createPendingService(name) {
   const service = await Service.create({
     name: String(name).trim(),
     alias,
-    isActive: false,
+    isActive: true,
     source: 'csv_import',
     subServices: []
   });
@@ -205,7 +205,7 @@ async function createPendingService(name) {
 
 /**
  * Create a new sub-service under an existing service, flagged as pending
- * review (inactive, source csv_import).
+ * review (source csv_import).
  */
 async function createPendingSubService(serviceId, name) {
   const service = await Service.findById(serviceId);
@@ -217,7 +217,7 @@ async function createPendingSubService(serviceId, name) {
     name: String(name).trim(),
     alias,
     isOfferedDefault: false,
-    isActive: false,
+    isActive: true,
     source: 'csv_import'
   });
 
