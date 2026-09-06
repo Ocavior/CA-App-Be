@@ -1,5 +1,6 @@
 // models/CaSubmission.js
 const mongoose = require('mongoose');
+const { last10Digits } = require('../utils/phoneUtils');
 
 // Sub-service offering: alias -> whether the CA offers it
 // Individual service schema - stores offered flag, free-text overflow, and
@@ -35,6 +36,15 @@ const CaSubmissionSchema = new mongoose.Schema({
   mobile: {
     type: String,
     trim: true,
+    index: true
+  },
+
+  // Last 10 digits of `mobile`, kept in sync via the pre-save/pre-update
+  // hooks below. Lets duplicate-matching do an indexed exact-match lookup
+  // instead of a suffix regex on `mobile` (which can't use a B-tree index
+  // and forces a full collection scan on every match attempt).
+  mobileLast10: {
+    type: String,
     index: true
   },
 
@@ -247,6 +257,7 @@ CaSubmissionSchema.pre('save', function (next) {
   // Clean up phone numbers
   if (this.mobile) {
     this.mobile = this.mobile.replace(/[^\d+]/g, '');
+    this.mobileLast10 = last10Digits(this.mobile);
   }
 
   // Validate email format
@@ -255,6 +266,22 @@ CaSubmissionSchema.pre('save', function (next) {
     if (!emailRegex.test(this.email)) {
       this.email = undefined;
     }
+  }
+
+  next();
+});
+
+// Keep mobileLast10 in sync for update-style writes too (findByIdAndUpdate,
+// findOneAndUpdate, the CSV-import upsert) - these bypass pre('save').
+CaSubmissionSchema.pre(['findOneAndUpdate', 'updateOne'], function (next) {
+  const update = this.getUpdate() || {};
+  const target = update.$set || update;
+  const mobile = target.mobile;
+
+  if (mobile !== undefined) {
+    if (!update.$set) update.$set = {};
+    update.$set.mobile = String(mobile).replace(/[^\d+]/g, '');
+    update.$set.mobileLast10 = last10Digits(update.$set.mobile);
   }
 
   next();

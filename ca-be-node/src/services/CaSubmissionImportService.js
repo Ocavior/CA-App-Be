@@ -402,12 +402,16 @@ async function mapRowToDoc(raw, headerRowMap, matchCtx) {
  * than an exact string, so it finds existing records regardless of whether
  * their mobile field happens to be stored with or without a +91 prefix
  * (manual creation and CSV import didn't always normalize the same way).
+ * Queries the indexed `mobileLast10` field (kept in sync by the model's
+ * pre-save/pre-update hooks) instead of a suffix regex on `mobile` - a
+ * suffix regex can't use a B-tree index and forces a full collection scan
+ * on every row of an import.
  */
 function buildMatchQuery(doc) {
   if (doc.mobile) {
     const last10 = last10Digits(doc.mobile);
     if (last10) {
-      return { query: { mobile: { $regex: last10 + '$' } }, key: `mobile:${last10}` };
+      return { query: { mobileLast10: last10 }, key: `mobile:${last10}` };
     }
     return { query: { mobile: doc.mobile }, key: `mobile:${doc.mobile}` };
   }
