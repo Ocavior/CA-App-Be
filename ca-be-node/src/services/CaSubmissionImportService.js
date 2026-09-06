@@ -204,7 +204,7 @@ function isGenericAffirmative(text) {
 /**
  * Loads the current service/sub-service list once per import run and tracks
  * new services/sub-services discovered while processing rows. In commit
- * mode, unmatched names are actually created (inactive, pending review);
+ * mode, unmatched names are actually created (active, pending review);
  * in preview mode nothing is written - candidates are only recorded.
  */
 async function buildMatchContext({ commit }) {
