@@ -1,5 +1,6 @@
 // services/CaSubmissionImportService.js
 const XLSX = require('xlsx');
+const mongoose = require('mongoose');
 const CaSubmission = require('../models/caData');
 const ServiceManagementService = require('../services/ServiceManagementService');
 const { normalizeName } = require('../utils/aliasUtils');
@@ -296,7 +297,13 @@ async function mapRowToDoc(raw, headerRowMap, matchCtx) {
           if (cellValue) doc.name = String(cellValue).trim();
           break;
         case 'mobile':
-          if (cellValue) doc.mobile = cleanPhoneNumber(cellValue);
+          if (cellValue) {
+            doc.mobile = cleanPhoneNumber(cellValue);
+            // Bulk insert/update ops (see processExcel) bypass the model's
+            // pre-save/pre-update hooks entirely, so mobileLast10 has to be
+            // set here explicitly rather than relying on those hooks.
+            doc.mobileLast10 = last10Digits(doc.mobile);
+          }
           break;
         case 'email': {
           if (cellValue) {
@@ -396,30 +403,79 @@ async function mapRowToDoc(raw, headerRowMap, matchCtx) {
 }
 
 /**
- * Build the query used to find an existing CaSubmission matching this row,
- * plus a stable string key for detecting duplicate rows within the same
- * import batch. Matches on the last 10 digits of the phone number rather
- * than an exact string, so it finds existing records regardless of whether
- * their mobile field happens to be stored with or without a +91 prefix
- * (manual creation and CSV import didn't always normalize the same way).
- * Queries the indexed `mobileLast10` field (kept in sync by the model's
- * pre-save/pre-update hooks) instead of a suffix regex on `mobile` - a
- * suffix regex can't use a B-tree index and forces a full collection scan
- * on every row of an import.
+ * In-memory lookup index used to match a row to an existing CaSubmission
+ * without hitting the DB per row. Built once per import run from a single
+ * upfront query, instead of the old per-row `findOne`/`findOneAndUpdate`
+ * (which, even indexed, is a network round trip per row - 500+ rows meant
+ * 500+ sequential round trips, which is what made large imports hang).
+ *
+ * byMobileExact/byMobile hold different things: byMobile is keyed by the
+ * last 10 digits (the normal case), byMobileExact is a fallback keyed by
+ * the raw mobile string for the rare case where a value has fewer than 10
+ * digits and last10Digits can't produce a suffix key.
  */
-function buildMatchQuery(doc) {
+function buildEmptyMatchIndex() {
+  return {
+    byMobile: new Map(),
+    byMobileExact: new Map(),
+    byEmail: new Map(),
+    byName: new Map()
+  };
+}
+
+/**
+ * Registers one record's identifying fields into every relevant map, not
+ * just whichever field matching priority would use - so a later row in the
+ * same file that matches this record via a *different* field (e.g. row 1
+ * has only a mobile number, row 50 has no mobile but the same email) still
+ * finds it. This mirrors the old behavior, where each row's live DB query
+ * always saw every row already committed earlier in the same run.
+ */
+function registerInMatchIndex(index, doc, id) {
+  if (doc.mobileLast10) index.byMobile.set(doc.mobileLast10, id);
+  else if (doc.mobile) index.byMobileExact.set(doc.mobile, id);
+  if (doc.email) index.byEmail.set(doc.email, id);
+  if (doc.name) index.byName.set(doc.name, id);
+}
+
+async function buildCaMatchIndex() {
+  const index = buildEmptyMatchIndex();
+  const existing = await CaSubmission.find({}, 'mobile mobileLast10 email name').lean();
+
+  for (const rec of existing) {
+    registerInMatchIndex(index, rec, rec._id);
+  }
+
+  return index;
+}
+
+/**
+ * Resolves a mapped row to a stable dedupe key (for detecting duplicate
+ * rows within the same file) and, if one exists, the _id of the existing
+ * CaSubmission it matches - looked up from the in-memory index rather than
+ * a live query. Same field priority as before: mobile, then email, then
+ * name. Matches on the last 10 digits of the phone number rather than an
+ * exact string, so it finds existing records regardless of whether their
+ * mobile field happens to be stored with or without a +91 prefix (manual
+ * creation and CSV import didn't always normalize the same way).
+ */
+function resolveMatch(doc, index) {
   if (doc.mobile) {
-    const last10 = last10Digits(doc.mobile);
-    if (last10) {
-      return { query: { mobileLast10: last10 }, key: `mobile:${last10}` };
+    if (doc.mobileLast10) {
+      return { key: `mobile:${doc.mobileLast10}`, existingId: index.byMobile.get(doc.mobileLast10) || null };
     }
-    return { query: { mobile: doc.mobile }, key: `mobile:${doc.mobile}` };
+    return { key: `mobile:${doc.mobile}`, existingId: index.byMobileExact.get(doc.mobile) || null };
   }
   if (doc.email) {
-    return { query: { email: doc.email }, key: `email:${doc.email}` };
+    return { key: `email:${doc.email}`, existingId: index.byEmail.get(doc.email) || null };
   }
-  return { query: { name: doc.name }, key: `name:${doc.name}` };
+  return { key: `name:${doc.name}`, existingId: index.byName.get(doc.name) || null };
 }
+
+// Bulk-write ops are flushed in chunks rather than one at a time (a round
+// trip per row) or all at the very end (loses all progress if the request
+// is interrupted mid-import).
+const BULK_CHUNK_SIZE = 200;
 
 /**
  * Shared parse -> validate -> (optionally) commit pipeline for both preview
@@ -464,6 +520,7 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
   }
 
   const matchCtx = await buildMatchContext({ commit });
+  const matchIndex = await buildCaMatchIndex();
 
   let inserted = 0, updated = 0, skipped = 0;
   const errors = [];
@@ -473,65 +530,149 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
   // the earlier row's data with no explanation.
   const seenKeys = new Map();
 
+  // Accumulated bulk write ops, flushed every BULK_CHUNK_SIZE rows instead
+  // of a DB round trip per row. Counts are finalized only once a flush
+  // confirms which ops actually succeeded, so a partial bulk failure still
+  // attributes the error to the right row instead of over/under-counting.
+  let pendingOps = [];
+
+  async function flushPendingOps() {
+    if (!pendingOps.length) return;
+
+    try {
+      await CaSubmission.bulkWrite(pendingOps.map(p => p.op), { ordered: false });
+      for (const p of pendingOps) {
+        if (p.kind === 'insert') inserted++; else updated++;
+      }
+    } catch (err) {
+      const writeErrors = err.writeErrors || [];
+      const failedByIndex = new Map(writeErrors.map(we => [we.index, we]));
+
+      pendingOps.forEach((p, idx) => {
+        const we = failedByIndex.get(idx);
+        if (we) {
+          skipped++;
+          const msg = we.errmsg || we.err?.errmsg || err.message;
+          errors.push({ row: p.rowNum, error: msg, data: p.raw });
+          if (debug) console.log(`Row ${p.rowNum}: Error - ${msg}`);
+        } else if (p.kind === 'insert') {
+          inserted++;
+        } else {
+          updated++;
+        }
+      });
+    }
+
+    pendingOps = [];
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i];
+    const rowNum = i + 2;
 
     try {
       const doc = await mapRowToDoc(raw, headerRowMap, matchCtx);
 
       if (!doc.name) {
         skipped++;
-        errors.push({ row: i + 2, error: 'Name is required', data: raw });
+        errors.push({ row: rowNum, error: 'Name is required', data: raw });
         continue;
       }
 
-      const { query, key } = buildMatchQuery(doc);
+      const { key, existingId } = resolveMatch(doc, matchIndex);
 
       const firstRow = seenKeys.get(key);
       if (firstRow) {
         skipped++;
         errors.push({
-          row: i + 2,
+          row: rowNum,
           error: `Duplicate of row ${firstRow} within this file (same ${key.split(':')[0]}) - skipped so it doesn't overwrite row ${firstRow}'s data`,
           data: raw
         });
         continue;
       }
-      seenKeys.set(key, i + 2);
+      seenKeys.set(key, rowNum);
 
       if (!commit && sampleRows.length < 10) {
-        sampleRows.push({ row: i + 2, mapped: doc });
+        sampleRows.push({ row: rowNum, mapped: doc });
       }
 
       if (!commit) {
-        // Preview: forecast insert vs update with a read-only lookup, write nothing.
-        const existing = upsert ? await CaSubmission.findOne(query).select('_id').lean() : null;
-        if (existing) updated++;
-        else inserted++;
+        // Preview: forecast insert vs update from the in-memory index, write nothing.
+        if (upsert) {
+          if (existingId) {
+            updated++;
+          } else {
+            inserted++;
+            registerInMatchIndex(matchIndex, doc, new mongoose.Types.ObjectId());
+          }
+        } else {
+          inserted++;
+        }
         continue;
       }
 
       if (upsert) {
-        const existing = await CaSubmission.findOne(query).select('_id').lean();
+        if (existingId) {
+          // Validate what would land in $set the same way runValidators
+          // would have - bulkWrite skips Mongoose validation entirely.
+          const validationError = new CaSubmission({ _id: existingId, ...doc }).validateSync();
+          if (validationError) throw validationError;
 
-        await CaSubmission.findOneAndUpdate(
-          query,
-          { $set: doc, $setOnInsert: { importedAt: new Date() } },
-          { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
-        );
+          pendingOps.push({
+            rowNum,
+            raw,
+            kind: 'update',
+            op: {
+              updateOne: {
+                filter: { _id: existingId },
+                update: { $set: { ...doc, updatedAt: new Date() } }
+              }
+            }
+          });
+        } else {
+          const newId = new mongoose.Types.ObjectId();
+          // Constructing (not saving) still applies schema defaults
+          // (isActive, services, timestamp, etc.) - only the custom hooks
+          // and the timestamps plugin are skipped, so createdAt/updatedAt
+          // are set explicitly below. flattenMaps is required so the Map
+          // schema type (services) serializes as a plain object for the
+          // raw insertOne op instead of a live Map instance.
+          const newDoc = new CaSubmission({
+            _id: newId,
+            ...doc,
+            importedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+          const validationError = newDoc.validateSync();
+          if (validationError) throw validationError;
 
-        if (existing) updated++;
-        else inserted++;
+          pendingOps.push({
+            rowNum,
+            raw,
+            kind: 'insert',
+            op: { insertOne: { document: newDoc.toObject({ flattenMaps: true }) } }
+          });
+
+          // So a later row in this same file can match this record via a
+          // different field than the one that identified it as new here.
+          registerInMatchIndex(matchIndex, doc, newId);
+        }
+
+        if (pendingOps.length >= BULK_CHUNK_SIZE) await flushPendingOps();
       } else {
         await CaSubmission.create(doc);
         inserted++;
       }
     } catch (e) {
       skipped++;
-      errors.push({ row: i + 2, error: e.message, data: raw });
-      if (debug) console.log(`Row ${i + 2}: Error - ${e.message}`);
+      errors.push({ row: rowNum, error: e.message, data: raw });
+      if (debug) console.log(`Row ${rowNum}: Error - ${e.message}`);
     }
   }
+
+  if (commit) await flushPendingOps();
 
   const result = {
     inserted,
