@@ -91,20 +91,42 @@ async function getServiceById(id) {
 }
 
 async function updateService(id, payload = {}) {
+  const service = await Service.findById(id);
+  if (!service) throw notFoundError('Service not found');
+
+  if (service.source !== 'manual') {
+    const err = new Error('Only manually-created services can be updated');
+    err.statusCode = 403;
+    throw err;
+  }
+
   const allowed = ['name', 'alias', 'isActive'];
-  const data = {};
   allowed.forEach(field => {
-    if (payload[field] !== undefined) data[field] = payload[field];
+    if (payload[field] !== undefined) service[field] = payload[field];
   });
 
-  const updated = await Service.findByIdAndUpdate(
-    id,
-    { $set: data },
-    { new: true, runValidators: true }
-  ).lean();
+  await service.save();
+  return service.toObject();
+}
 
-  if (!updated) throw notFoundError('Service not found');
-  return updated;
+/**
+ * Hard-delete a service. Only allowed for manually-created services -
+ * seeded/csv_import services are managed data, not something a user should
+ * be able to remove outright (toggleServiceActive is the soft-delete path
+ * for those).
+ */
+async function deleteService(id) {
+  const service = await Service.findById(id);
+  if (!service) throw notFoundError('Service not found');
+
+  if (service.source !== 'manual') {
+    const err = new Error('Only manually-created services can be deleted');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  await Service.deleteOne({ _id: id });
+  return { _id: id };
 }
 
 async function toggleServiceActive(id, explicitValue = null) {
@@ -230,6 +252,7 @@ module.exports = {
   getAllServices,
   getServiceById,
   updateService,
+  deleteService,
   toggleServiceActive,
   addSubService,
   updateSubService,

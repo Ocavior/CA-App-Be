@@ -33,6 +33,13 @@ const serviceRoutes = {
       description: 'Update a service'
     },
     {
+      method: 'DELETE',
+      path: '/ca/services/:id',
+      middleware: [authenticateToken],
+      handler: ServiceController.deleteService,
+      description: 'Delete a service (manually-created services only)'
+    },
+    {
       method: 'PATCH',
       path: '/ca/services/:id/active',
       middleware: [authenticateToken],
