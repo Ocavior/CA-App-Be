@@ -72,6 +72,21 @@ async function updateService(request, context) {
   }
 }
 
+async function deleteService(request, context) {
+  try {
+    const { id } = request.params;
+    const data = await ServiceManagementService.deleteService(id);
+
+    return { status: 200, jsonBody: { success: true, message: 'Service deleted successfully', data } };
+  } catch (err) {
+    context.error('Delete service error:', err);
+    return {
+      status: err.statusCode || (err.name === 'CastError' ? 400 : 500),
+      jsonBody: { success: false, message: err.name === 'CastError' ? 'Invalid service ID' : err.message }
+    };
+  }
+}
+
 async function toggleServiceStatus(request, context) {
   try {
     const { id } = request.params;
@@ -151,6 +166,7 @@ module.exports = {
   getServices,
   getServiceById,
   updateService,
+  deleteService,
   toggleServiceStatus,
   addSubService,
   updateSubService,
