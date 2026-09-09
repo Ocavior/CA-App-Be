@@ -94,13 +94,16 @@ async function updateService(id, payload = {}) {
   const service = await Service.findById(id);
   if (!service) throw notFoundError('Service not found');
 
-  if (service.source !== 'manual') {
-    const err = new Error('Only manually-created services can be updated');
-    err.statusCode = 403;
+  // Alias is the key CaSubmission.services is stored under - changing it
+  // would orphan every CA record already tagged with this service, so it's
+  // immutable after creation. Name (the display label) remains editable.
+  if (payload.alias !== undefined && payload.alias !== service.alias) {
+    const err = new Error('Service alias cannot be changed after creation');
+    err.statusCode = 400;
     throw err;
   }
 
-  const allowed = ['name', 'alias', 'isActive'];
+  const allowed = ['name', 'isActive'];
   allowed.forEach(field => {
     if (payload[field] !== undefined) service[field] = payload[field];
   });
@@ -110,20 +113,13 @@ async function updateService(id, payload = {}) {
 }
 
 /**
- * Hard-delete a service. Only allowed for manually-created services -
- * seeded/csv_import services are managed data, not something a user should
- * be able to remove outright (toggleServiceActive is the soft-delete path
- * for those).
+ * Hard-delete a service, regardless of source or whether any CaSubmission
+ * still references its alias - that data is left in place (orphaned, not
+ * resolvable to a real service definition anymore) rather than blocked.
  */
 async function deleteService(id) {
   const service = await Service.findById(id);
   if (!service) throw notFoundError('Service not found');
-
-  if (service.source !== 'manual') {
-    const err = new Error('Only manually-created services can be deleted');
-    err.statusCode = 403;
-    throw err;
-  }
 
   await Service.deleteOne({ _id: id });
   return { _id: id };
@@ -176,13 +172,38 @@ async function updateSubService(serviceId, subServiceId, payload = {}) {
   const subService = service.subServices.id(subServiceId);
   if (!subService) throw notFoundError('Sub-service not found');
 
-  const allowed = ['name', 'alias', 'isOfferedDefault', 'isActive'];
+  // Same reasoning as the service-level alias check: alias is the key
+  // CaSubmission.services.<serviceAlias>.subServices is stored under.
+  if (payload.alias !== undefined && payload.alias !== subService.alias) {
+    const err = new Error('Sub-service alias cannot be changed after creation');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const allowed = ['name', 'isOfferedDefault', 'isActive'];
   allowed.forEach(field => {
     if (payload[field] !== undefined) subService[field] = payload[field];
   });
 
   await service.save();
   return service.toObject();
+}
+
+/**
+ * Hard-delete a sub-service, regardless of source or whether any
+ * CaSubmission still references it - that data is left in place (orphaned)
+ * rather than blocked.
+ */
+async function deleteSubService(serviceId, subServiceId) {
+  const service = await Service.findById(serviceId);
+  if (!service) throw notFoundError('Service not found');
+
+  const subService = service.subServices.id(subServiceId);
+  if (!subService) throw notFoundError('Sub-service not found');
+
+  subService.deleteOne();
+  await service.save();
+  return { _id: subServiceId };
 }
 
 async function toggleSubServiceActive(serviceId, subServiceId, explicitValue = null) {
@@ -256,6 +277,7 @@ module.exports = {
   toggleServiceActive,
   addSubService,
   updateSubService,
+  deleteSubService,
   toggleSubServiceActive,
   getAllServicesForMatching,
   createPendingService,
