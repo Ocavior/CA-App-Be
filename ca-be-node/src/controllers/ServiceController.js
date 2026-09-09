@@ -141,6 +141,21 @@ async function updateSubService(request, context) {
   }
 }
 
+async function deleteSubService(request, context) {
+  try {
+    const { id, subServiceId } = request.params;
+    const data = await ServiceManagementService.deleteSubService(id, subServiceId);
+
+    return { status: 200, jsonBody: { success: true, message: 'Sub-service deleted successfully', data } };
+  } catch (err) {
+    context.error('Delete sub-service error:', err);
+    return {
+      status: err.statusCode || (err.name === 'CastError' ? 400 : 500),
+      jsonBody: { success: false, message: err.name === 'CastError' ? 'Invalid ID' : err.message }
+    };
+  }
+}
+
 async function toggleSubServiceStatus(request, context) {
   try {
     const { id, subServiceId } = request.params;
@@ -170,5 +185,6 @@ module.exports = {
   toggleServiceStatus,
   addSubService,
   updateSubService,
+  deleteSubService,
   toggleSubServiceStatus
 };

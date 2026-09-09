@@ -61,6 +61,13 @@ const serviceRoutes = {
       description: 'Update a sub-service'
     },
     {
+      method: 'DELETE',
+      path: '/ca/services/:id/sub-services/:subServiceId',
+      middleware: [authenticateToken],
+      handler: ServiceController.deleteSubService,
+      description: 'Delete a sub-service (manually-created sub-services only)'
+    },
+    {
       method: 'PATCH',
       path: '/ca/services/:id/sub-services/:subServiceId/active',
       middleware: [authenticateToken],
