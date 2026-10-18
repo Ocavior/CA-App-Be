@@ -159,12 +159,16 @@ class AuthService {
             const { jwtAccessToken } = await this.generateTokens(user);
 
             if (device_id && device_token) {
-                const deviceRegistration = await this.registerDevice({
-                    device_id,
-                    device_token,
-                    device_name
-                });
-                console.log('Device registration successful:', deviceRegistration);
+                try {
+                    const deviceRegistration = await this.registerDevice({
+                        device_id,
+                        device_token,
+                        device_name
+                    });
+                    console.log('Device registration successful:', deviceRegistration);
+                } catch (devError) {
+                    console.error('Warning: Device registration failed during login:', devError.message);
+                }
             }
 
             return {
