@@ -6,6 +6,26 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
+### [LOG-004] 2026-10-19 01:55 IST — Live Render Runtime Diagnosis & dev/prabhash Remote Push
+* **Requested By**: User
+* **User Observation**:
+  > *"i have upadted the api in the backenf but in the front end still i am getting this same error: 401 {"success":false,"message":"Failed to register device"}"*
+* **Investigation & Root Cause Analysis**:
+  1. Inspected live Render instance headers (`https://ca-app-be-1.onrender.com/api/v1/health-check`): response header returned `x-powered-by: Express`, proving Render deploys the standalone **`ca-be-node`** server, not root `src/`!
+  2. In PR #6 (`772cd0e`), the user updated `src/services/AuthService.js`, but `ca-be-node/src/services/AuthService.js` remained untouched with the defunct Azure URL (`whatsapp-backend.happyriver...`).
+  3. Tested live login against Render with Node script:
+     - **Without device tokens**: HTTP 200 OK (`Login successful`, valid JWT token).
+     - **With device tokens**: HTTP 401 (`Failed to register device`), confirming the issue is 100% isolated to `ca-be-node/src/services/AuthService.js`.
+* **Actions Taken**:
+  1. Rebased `dev/prabhash` onto latest `origin/main` (commit `dd70d9e`).
+  2. Verified `ca-be-node/src/services/AuthService.js` has updated Render URL and non-blocking `try...catch` wrapper.
+  3. Pushed updated branch to `origin/dev/prabhash`.
+* **Deployment Paths for User**:
+  - Merge `dev/prabhash` into `main` to trigger Render deployment of `ca-be-node`.
+  - Alternatively, set `WHATSAPP_API_BASE_URL=https://whatsapp-backend-ln7k.onrender.com/api/whatsapp` in Render environment settings to fix immediately without rebuild.
+
+---
+
 ### [LOG-003] 2026-10-19 01:35 IST — Fix Device Registration Timeout & Update WhatsApp Service Fallback URL
 * **Requested By**: User
 * **User Instruction**:
