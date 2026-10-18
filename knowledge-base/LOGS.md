@@ -6,6 +6,26 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
+### [LOG-005] 2026-10-19 03:45 IST — Added Verbose Diagnostic Logging for WHATSAPP_API_BASE and Device Registration
+* **Requested By**: User
+* **User Instruction**:
+  > *"just log the WHATSAPP_API_BASE value i want to check it"*
+* **Target Branches**:
+  - `dev/prabhash`: Commit `d78c10c`.
+  - `knowledge-base`: Log and documentation updated.
+* **Actions Taken**:
+  1. Added module-level startup logging in both `src/services/AuthService.js` and `ca-be-node/src/services/AuthService.js`:
+     - `=== [AuthService] process.env.WHATSAPP_API_BASE_URL ===`
+     - `=== [AuthService] Resolved WHATSAPP_API_BASE ===`
+  2. Added runtime request and response/error logging in `registerDevice`:
+     - `=== [registerDevice] Target URL ===`
+     - `=== [registerDevice] Query Params ===`
+     - `=== [registerDevice Response] ===`
+     - `=== [registerDevice ERROR] ===` (including targetUrl, error message, HTTP status, and response details).
+* **Status**: Completed (Pushed to `origin/dev/prabhash`).
+
+---
+
 ### [LOG-004] 2026-10-19 01:55 IST — Live Render Runtime Diagnosis & dev/prabhash Remote Push
 * **Requested By**: User
 * **User Observation**:
