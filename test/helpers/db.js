@@ -12,6 +12,9 @@ const Admin = require('../../src/models/admin');
 const CaSubmission = require('../../src/models/caData');
 const Service = require('../../src/models/service');
 const WhatsappTemplate = require('../../src/models/whatsappTemplate');
+const KnowledgeBase = require('../../src/knowledge-base/models/KnowledgeBase');
+const KnowledgeTask = require('../../src/knowledge-base/models/KnowledgeTask');
+const KnowledgeLog = require('../../src/knowledge-base/models/KnowledgeLog');
 
 let connected = false;
 
@@ -27,7 +30,7 @@ async function disconnect() {
   connected = false;
 }
 
-const MODELS = { Admin, CaSubmission, Service, WhatsappTemplate };
+const MODELS = { Admin, CaSubmission, Service, WhatsappTemplate, KnowledgeBase, KnowledgeTask, KnowledgeLog };
 
 /**
  * Deletes all documents from the given collections (default: every

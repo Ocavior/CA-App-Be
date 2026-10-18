@@ -5,6 +5,7 @@ const notificationRoutes = require('./notifications');
 const conversationRoutes = require('./conversationRoutes');
 const whatsappTemplateRoutes = require('./whatsappTemplateRoutes');
 const serviceRoutes = require('./serviceRoutes');
+const knowledgeBaseRoutes = require('../knowledge-base/routes/knowledgeBaseRoutes');
 class Router {
     constructor() {
         this.routes = new Map();
@@ -19,6 +20,7 @@ class Router {
         notificationRoutes.registerRoutes(this);
         caSubmissionRoutes.registerRoutes(this);
         serviceRoutes.registerRoutes(this);
+        knowledgeBaseRoutes.registerRoutes(this);
         // Health check
         this.addRoute('GET', '/health-check', this.healthCheck);
 
