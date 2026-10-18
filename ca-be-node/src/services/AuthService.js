@@ -7,6 +7,8 @@ const constants = require('../config/app.config');
 const axios = require('axios');
 const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL
     || 'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
+console.log('=== [AuthService] process.env.WHATSAPP_API_BASE_URL ===:', process.env.WHATSAPP_API_BASE_URL);
+console.log('=== [AuthService] Resolved WHATSAPP_API_BASE ===:', WHATSAPP_API_BASE);
 
 class AuthService {
 
@@ -599,6 +601,8 @@ class AuthService {
         }
 
         try {
+            console.log('=== [registerDevice] Target URL ===:', `${WHATSAPP_API_BASE}/register/device`);
+            console.log('=== [registerDevice] Query Params ===:', queryParams);
             const response = await axios.post(
                 `${WHATSAPP_API_BASE}/register/device`,
                 null,
@@ -611,8 +615,15 @@ class AuthService {
                 }
             );
 
+            console.log('=== [registerDevice Response] ===:', response.data);
             return response.data;
         } catch (error) {
+            console.error('=== [registerDevice ERROR] ===:', {
+                targetUrl: `${WHATSAPP_API_BASE}/register/device`,
+                message: error.message,
+                status: error.response?.status,
+                details: error.response?.data
+            });
             const err = new Error(
                 error.response?.data?.message || 'Failed to register device'
             );
