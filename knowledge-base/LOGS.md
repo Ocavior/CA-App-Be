@@ -6,6 +6,29 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
+### [LOG-003] 2026-10-19 01:35 IST — Fix Device Registration Timeout & Update WhatsApp Service Fallback URL
+* **Requested By**: User
+* **User Instruction**:
+  > *"in the frontend i am getting this error message on the login api: 401 {"success":false,"message":"Failed to register device"} ... can you check the value of process.env.WHATSAPP_API_BASE_URL ... yes please update it"*
+* **Target Branches**:
+  - `dev/prabhash`: Code fix applied in commit `1ae25db`.
+  - `knowledge-base`: Log and documentation updated.
+* **Root Cause**:
+  - The login API attempted to register device tokens synchronously with the external WhatsApp backend.
+  - The default URL pointed to a defunct Azure Container App (`whatsapp-backend.happyriver-1999a58f.southindia.azurecontainerapps.io`) which failed DNS resolution, causing a 15-23 second delay followed by an uncaught error that aborted login with HTTP 401.
+* **Actions Taken**:
+  1. Updated the hardcoded fallback WhatsApp API URL from the defunct Azure host to the active Render service `https://whatsapp-backend-ln7k.onrender.com/api/whatsapp` across:
+     - `src/controllers/NotificationController.js`
+     - `src/controllers/ConversationController.js`
+     - `ca-be-node/src/services/AuthService.js`
+     - `ca-be-node/src/controllers/NotificationController.js`
+     - `ca-be-node/src/controllers/ConversationController.js`
+     - `ca-be-node/.env.example`
+  2. Wrapped `registerDevice` in a non-blocking `try...catch` inside `AuthService.loginUser` (in both `src/` and `ca-be-node/`) so external messaging timeouts or failures never block or abort valid user authentication.
+* **Status**: Completed (Commit `1ae25db` on `dev/prabhash`).
+
+---
+
 ### [LOG-002] 2026-10-19 00:50 IST — Knowledge Base Branch Separation & Repository Structuring
 * **Requested By**: User
 * **User Instruction**:

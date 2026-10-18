@@ -21,6 +21,7 @@ This document tracks all developer and agentic tasks for `CA-App-Be`. It is upda
 | **TASK-003** | Port `knowledge-base` package to standalone Node.js server | `knowledge-base` | 2026-10-19 | Replicated to `ca-be-node/src/knowledge-base` and registered in both routers for runtime parity. |
 | **TASK-004** | Build automated Jest test suite for Knowledge Base | `knowledge-base` | 2026-10-19 | In-memory Mongo tests covering models, services, tasks worker, audit logs, and controllers in `test/modules/knowledge-base/`. |
 | **TASK-005** | Establish dedicated `knowledge-base` branch and documentation | `knowledge-base` | 2026-10-19 | Created `knowledge-base` branch with isolated documentation (`README.md`, `ARCHITECTURE.md`, `API_REFERENCE.md`, `TASKS.md`, `LOGS.md`). |
+| **TASK-012** | Fix login failure caused by device registration timeout and outdated WhatsApp service fallback URL | `dev/prabhash` | 2026-10-19 | Updated fallback WhatsApp URL to active Render endpoint across all controllers and made device registration non-blocking on login (commit `1ae25db`). |
 
 ---
 
