@@ -5,8 +5,8 @@ const User = require('../models/admin');
 const { logError } = require('../utils/logError');
 const constants = require('../config/app.config');
 const axios = require('axios');
-const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL
-    || 'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
+const WHATSAPP_API_BASE = // process.env.WHATSAPP_API_BASE_URL || 
+    'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
 console.log('=== [AuthService] process.env.WHATSAPP_API_BASE_URL ===:', process.env.WHATSAPP_API_BASE_URL);
 console.log('=== [AuthService] Resolved WHATSAPP_API_BASE ===:', WHATSAPP_API_BASE);
 
@@ -625,7 +625,7 @@ class AuthService {
                 details: error.response?.data
             });
             const err = new Error(
-                error.response?.data?.message || 'Failed to register device'
+                `${error.response?.data?.message || 'Failed to register device'} API: ${WHATSAPP_API_BASE}`
             );
             err.statusCode = error.response?.status || 502;
             err.details = error.response?.data;
