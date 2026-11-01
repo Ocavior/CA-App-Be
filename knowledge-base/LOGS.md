@@ -22,7 +22,8 @@ This file records all requests, modifications, architectural decisions, and agen
 * **Findings**:
   - The repo is public, so this branch must not record security details. The owner was told about the security items directly.
   - Render is still live. LOG-004 says merging to `main` redeploys it; with this code and no database it would break, so the merge waits for client cutover.
-* **Status**: In progress.
+* **Update, 2026-11-02**: The user authorized Cloudflare from Chrome. Created tunnel `ca-app` and the `ca-app.ocvrs.in` DNS record. `https://ca-app.ocvrs.in/api/v1` responds over HTTPS, tested for health, public and authenticated reads, auth rejection, and CORS preflight. The API and tunnel run as plain processes until `ops/setup-server.sh` is run by the user. A real-account login, and writes through the public URL, have not been tested.
+* **Status**: URL live, not yet permanent. CI/CD inactive until setup is run and the feature branch is merged to `main`.
 
 ---
 
