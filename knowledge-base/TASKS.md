@@ -22,6 +22,7 @@ This document tracks all developer and agentic tasks for `CA-App-Be`. It is upda
 | **TASK-004** | Build automated Jest test suite for Knowledge Base | `knowledge-base` | 2026-10-19 | In-memory Mongo tests covering models, services, tasks worker, audit logs, and controllers in `test/modules/knowledge-base/`. |
 | **TASK-005** | Establish dedicated `knowledge-base` branch and documentation | `knowledge-base` | 2026-10-19 | Created `knowledge-base` branch with isolated documentation (`README.md`, `ARCHITECTURE.md`, `API_REFERENCE.md`, `TASKS.md`, `LOGS.md`). |
 | **TASK-012** | Fix login failure caused by device registration timeout and outdated WhatsApp service fallback URL | `dev/prabhash` | 2026-10-19 | Updated fallback WhatsApp URL to active Render endpoint across all controllers and made device registration non-blocking on login (commit `1ae25db`). |
+| **TASK-013** | Migrate `ca-be-node` to local PostgreSQL and run it on this Mac; import data from MongoDB | `feat/postgres-local-server` | 2026-11-02 | Server running, suite matches baseline. Code uncommitted. See LOG-006. |
 
 ---
 
@@ -35,6 +36,7 @@ This document tracks all developer and agentic tasks for `CA-App-Be`. It is upda
 | **TASK-009** | Sub-service Filter on Submissions | `dev/prabhash` | `[ ]` Pending | Medium | Support sub-service filtering on `GET /ca/submissions`. (Ref: Issue #3) |
 | **TASK-010** | Search Relevance Ranking Quality | `dev/prabhash` | `[ ]` Pending | Low | Ensure exact full-name matches rank above partial string matches in `searchSubmissions`. (Ref: Issue #4) |
 | **TASK-011** | Location Match Consistency | `dev/prabhash` | `[ ]` Pending | Low | Unify state/city regex match semantics between `/ca/submissions` and `/ca/search`. (Ref: Issue #6) |
+| **TASK-014** | Complete cutover from Render | `feat/postgres-local-server` | `[ ]` Pending | High | Commit code, final re-import, repoint clients, public access with TLS, service install, backups, email config, credential rotation. See `POSTGRES_MIGRATION.md`, Open items. |
 
 ---
 

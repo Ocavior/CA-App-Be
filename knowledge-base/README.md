@@ -25,6 +25,7 @@ This branch serves as the authoritative, centralized knowledge repository for th
 |---|---|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | High-level system architecture, dual-runtime model (Azure Functions vs Express in `ca-be-node`), database designs, auth mechanics, and parity guidelines |
 | [`API_REFERENCE.md`](./API_REFERENCE.md) | Exhaustive catalog of all API endpoints across all modules, including query params, request bodies, and curl samples |
+| [`POSTGRES_MIGRATION.md`](./POSTGRES_MIGRATION.md) | **Start here for the current deployment**: local server and PostgreSQL state, design decisions, verification, open cutover items, runbook |
 | [`TASKS.md`](./TASKS.md) | Live task tracker: active, completed, and pending development tasks |
 | [`LOGS.md`](./LOGS.md) | Detailed audit & changelog recording every modification requested and implemented |
 | [`../src/knowledge-base/`](../src/knowledge-base/) | Backend API module for dynamic Knowledge Base articles, task workflows, and runtime audit logging |

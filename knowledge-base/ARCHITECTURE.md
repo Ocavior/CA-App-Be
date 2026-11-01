@@ -23,8 +23,8 @@ CA-App-Be Repository Root
 │   ├── services/      # Core business logic and database queries
 │   └── knowledge-base/# Modular Knowledge Base package
 │
-└── ca-be-node/        # Standalone Node.js/Express Server (Migration Target)
-    └── src/           # Direct port of src/ running on standard Node/Express
+└── ca-be-node/        # Standalone Node.js/Express Server on PostgreSQL (Migration Target)
+    └── src/           # Port of src/ running on standard Node/Express; data access in src/db/
 ```
 
 ### Runtime Comparison
@@ -67,7 +67,9 @@ graph TD
 
 ## 4. Database Schema & Data Models
 
-Database: **MongoDB** accessed via **Mongoose ORM**.
+Database: **MongoDB** via **Mongoose ORM** for the Azure app in root `src/`, as diagrammed below.
+
+`ca-be-node` now uses **PostgreSQL** with the same logical models. See [`POSTGRES_MIGRATION.md`](./POSTGRES_MIGRATION.md).
 
 ```mermaid
 erDiagram
@@ -154,4 +156,4 @@ erDiagram
 * **Framework**: Jest + Supertest (`test/`).
 * **Environment-Agnostic Execution**: Tests execute via HTTP client against `BASE_URL`.
 * **External Mocking**: `test/mocks/externalServicesServer.js` mocks WhatsApp and Email APIs.
-* **In-Memory Mongo**: `mongodb-memory-server` allows self-contained, high-speed test runs.
+* **Database**: On `feat/postgres-local-server`, the suite targets `ca-be-node` on a dedicated PostgreSQL test database (`TEST_DATABASE_URL`). To test the Azure app in root `src/`, use the Mongo-based harness on `main`.

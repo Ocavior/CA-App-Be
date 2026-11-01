@@ -6,6 +6,31 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
+### [LOG-006] 2026-11-02 IST — Migrated ca-be-node from Render + MongoDB to This Mac + Local PostgreSQL
+* **Requested By**: User
+* **User Instruction** (credentials omitted):
+  > *"currently it's deployed on the render i want to switch local server and want to use the db as the postgres and use this system as the server, provide me all the details after what is done and all, and use multiple agent for this task, and also create a separate branch which will be used as the knowledge base, which will contains all the details regarding the project, what things have been done all the logs and all stuff."*
+* **Target Branches**:
+  - `feat/postgres-local-server` (created from `main`): all code changes. **Uncommitted in the working tree at the time of this entry.**
+  - `knowledge-base`: this entry and [`POSTGRES_MIGRATION.md`](./POSTGRES_MIGRATION.md). The existing branch was extended rather than creating a second one. Committed locally, not pushed.
+* **Actions Taken**:
+  1. Installed PostgreSQL 17 with Homebrew, started with `brew services`, localhost only. Created role `ca_app` and databases `ca_app` and `ca_app_test`.
+  2. Profiled the source MongoDB read-only. Found it is shared with the unrelated TechHeaven e-commerce app; only the structure (field names and types) of those other collections was read, and none of their data was copied.
+  3. Built the data layer in `ca-be-node/src/db/` and the schema in `db/migrations/001_init.sql`.
+  4. Ran four agents with separate file ownership:
+     - **Data**: `scripts/migrate-from-mongo.js`; imported 5 admins, 21 services, 147 sub-services, 2,513 CA submissions, 12 templates, with 0 mismatches on a per-field comparison.
+     - **Auth/Services/Templates**: ported those models, services and auth middleware. Deleted `src/migrations/*`, `src/seed.js`, `src/seeds/seedData.js` (already broken).
+     - **CA Submissions**: ported model, controller (search scoring and stats moved to SQL) and CSV import (one transaction per 200 rows, savepoint per row). Ran a read-only comparison of old code against the source DB with Mongoose auto-index and auto-create disabled.
+     - **Tests**: captured the Mongo baseline, moved the harness to PostgreSQL, ran the suite and a GET-only HTTP differential on real data. Found and fixed a repeated-query-param regression in `src/db/filter.js`.
+  5. Removed `mongoose` from `ca-be-node`. `mongodb` remains as a dev dependency for the importer only.
+  6. Restored the `WHATSAPP_API_BASE_URL` env override that commit `cef6ad8` had temporarily commented out, in `ConversationController`, `NotificationController` and `AuthService`. Tests need it to reach the mock rather than the live WhatsApp service. `.env` sets the same URL as the fallback, so behavior is unchanged.
+  7. Stopped `AuthController` and `AuthService` writing login passwords and device tokens to logs, since logs now persist on local disk. Confirmed with a canary password.
+  8. Started the API on port 3000 as a plain background process. `ops/install-service.sh` (launchd) was written, but installing it was blocked by the session's permission policy, so it is left for the user to run.
+* **Verification**: See [`POSTGRES_MIGRATION.md`](./POSTGRES_MIGRATION.md#verification). Final suite on the final code: 169 passed, 1 failed (stale, also fails on `main`), 3 skipped, matching the baseline test for test. A first final run showed 14 extra failures in outbound WhatsApp and email tests; the cause was wrong mock URLs passed by hand when starting the test server, and they passed with the values in `test/README.md`. A real-account login was not tested. The old Render API did not respond within 25 seconds when probed, so its current state is unknown.
+* **Status**: Server running on PostgreSQL. **Cutover not complete**: Render and MongoDB are untouched and clients have not been repointed. See [Open items](./POSTGRES_MIGRATION.md#open-items-for-cutover).
+
+---
+
 ### [LOG-005] 2026-10-19 03:45 IST — Added Verbose Diagnostic Logging for WHATSAPP_API_BASE and Device Registration
 * **Requested By**: User
 * **User Instruction**:
