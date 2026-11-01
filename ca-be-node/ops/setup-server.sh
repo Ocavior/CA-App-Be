@@ -3,10 +3,10 @@
 # per-user launchd services, all of which start at login and restart on failure:
 #   com.ocavior.ca-app-be       the API, from ~/srv/ca-app/current
 #   com.ocavior.ca-app-tunnel   Cloudflare Tunnel: ca-app.ocvrs.in -> 127.0.0.1:3000
-#   actions.runner.*            GitHub Actions runner for deploy-ca-be-node.yml
+#   com.ocavior.ca-app-deploy   every minute, tests and deploys new commits on main
 #
-# Prerequisites: `cloudflared tunnel login` and `gh auth login` already done, and
-# ca-be-node/.env and root .env.test in place.
+# Prerequisites: `cloudflared tunnel login` already done, and ca-be-node/.env and
+# root .env.test in place.
 set -euo pipefail
 
 OPS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,8 +15,6 @@ REPO_ROOT="$(cd "$APP_SRC/.." && pwd)"
 BASE="$HOME/srv/ca-app"
 HOSTNAME_PUBLIC="ca-app.ocvrs.in"
 TUNNEL_NAME="ca-app"
-REPO="Ocavior/CA-App-Be"
-RUNNER_DIR="$HOME/srv/actions-runner"
 UID_DOMAIN="gui/$(id -u)"
 
 echo "== Release layout"
@@ -78,27 +76,31 @@ pkill -f "cloudflared tunnel run $TUNNEL_NAME" 2>/dev/null || true
 launchctl bootout "$UID_DOMAIN/com.ocavior.ca-app-tunnel" 2>/dev/null || true
 launchctl bootstrap "$UID_DOMAIN" "$TUNNEL_PLIST"
 
-echo "== GitHub Actions runner"
-if [ "$(gh repo view "$REPO" --json visibility -q .visibility)" = "PUBLIC" ]; then
-  echo "Refusing: $REPO is public, and a self-hosted runner on a public repo can run untrusted code." >&2
-  exit 1
-fi
-mkdir -p "$RUNNER_DIR"
-cd "$RUNNER_DIR"
-if [ ! -f config.sh ]; then
-  URL="$(gh api repos/actions/runner/releases/latest -q '.assets[] | select(.name | test("osx-arm64.*tar.gz$")) | .browser_download_url')"
-  curl -fsSL "$URL" | tar xz
-fi
-if [ ! -f .runner ]; then
-  TOKEN="$(gh api -X POST "repos/$REPO/actions/runners/registration-token" -q .token)"
-  ./config.sh --unattended --url "https://github.com/$REPO" --token "$TOKEN" \
-    --name "$(hostname -s)-ca-app" --labels ca-app --replace
-fi
-./svc.sh install || true
-./svc.sh start
+echo "== Auto-deploy"
+# A fixed copy, so a commit on main can't change the deployer while it is running.
+cp "$OPS_DIR/auto-deploy.sh" "$BASE/shared/auto-deploy.sh"
+chmod +x "$BASE/shared/auto-deploy.sh"
+DEPLOY_PLIST="$HOME/Library/LaunchAgents/com.ocavior.ca-app-deploy.plist"
+cat > "$DEPLOY_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ocavior.ca-app-deploy</string>
+  <key>ProgramArguments</key>
+  <array><string>$BASE/shared/auto-deploy.sh</string></array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/ca-app-be/deploy.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/ca-app-be/deploy.log</string>
+</dict>
+</plist>
+EOF
+launchctl bootout "$UID_DOMAIN/com.ocavior.ca-app-deploy" 2>/dev/null || true
+launchctl bootstrap "$UID_DOMAIN" "$DEPLOY_PLIST"
 
 echo "== Verify"
 sleep 5
 curl -s -m 15 -o /dev/null -w "local  %{http_code}\n" http://127.0.0.1:3000/api/v1/ca/health
 curl -s -m 15 -o /dev/null -w "public %{http_code}\n" "https://$HOSTNAME_PUBLIC/api/v1/ca/health"
-gh api "repos/$REPO/actions/runners" -q '.runners[] | "runner \(.name): \(.status)"'
+launchctl list | grep com.ocavior

@@ -24,13 +24,26 @@ matching the real prefix the original Azure Functions host serves today
 (confirmed by running it directly — not the `/v1` the code/`host.json`
 otherwise suggest).
 
-## Run it as a service on this machine
+## Deployment
+
+Served at `https://ca-app.ocvrs.in/api/v1` ([API reference](API.md)) from a Mac,
+through a Cloudflare Tunnel. Set up once with `ops/setup-server.sh`, after
+`cloudflared tunnel login`.
+
+Pushing to `main` deploys: every minute `ops/auto-deploy.sh` checks `origin/main`,
+and for new `ca-be-node/` or `test/` changes it runs the test suite, then releases
+to `~/srv/ca-app/releases/` and restarts. A failed test or health check leaves the
+previous version running. It polls because the repo is public, and a self-hosted
+GitHub Actions runner would let pull requests from forks run code on this machine.
+
+Production secrets are in `~/srv/ca-app/shared/.env`.
 
 ```bash
-ops/install-service.sh                                        # start at login, restart on crash
-launchctl kickstart -k gui/$(id -u)/com.ocavior.ca-app-be     # restart
-launchctl bootout gui/$(id -u)/com.ocavior.ca-app-be          # stop
-tail -f ~/Library/Logs/ca-app-be/server.log                   # logs
+launchctl kickstart -k gui/$(id -u)/com.ocavior.ca-app-be     # restart the API
+launchctl bootout gui/$(id -u)/com.ocavior.ca-app-deploy      # pause auto-deploy
+tail -f ~/Library/Logs/ca-app-be/deploy.log                   # deploy history
+tail -f ~/Library/Logs/ca-app-be/server.log                   # API logs
+tail -f ~/Library/Logs/ca-app-be/tunnel.log                   # tunnel logs
 ```
 
 ## Importing data from MongoDB
