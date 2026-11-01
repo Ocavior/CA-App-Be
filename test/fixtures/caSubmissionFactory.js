@@ -17,7 +17,7 @@ function buildCaSubmission(overrides = {}) {
   };
 }
 
-/** Inserts a CaSubmission directly (bypassing the API) via the real Mongoose model/schema. */
+/** Inserts a CaSubmission directly (bypassing the API) via the real model. */
 async function createCaSubmission(overrides = {}) {
   return db.models.CaSubmission.create(buildCaSubmission(overrides));
 }
@@ -25,9 +25,9 @@ async function createCaSubmission(overrides = {}) {
 async function createManyCaSubmissions(count, overridesFn = () => ({})) {
   const docs = [];
   for (let i = 0; i < count; i += 1) {
-    docs.push(buildCaSubmission(overridesFn(i)));
+    docs.push(await db.models.CaSubmission.create(buildCaSubmission(overridesFn(i))));
   }
-  return db.models.CaSubmission.insertMany(docs);
+  return docs;
 }
 
 module.exports = { buildCaSubmission, createCaSubmission, createManyCaSubmissions };

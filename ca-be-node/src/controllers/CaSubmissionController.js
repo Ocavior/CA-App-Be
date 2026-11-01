@@ -3,7 +3,7 @@ const { importFromExcel, previewExcel, createCaSubmission, updateCaSubmission, t
 const CaSubmission = require('../models/caData');
 const ServiceManagementService = require('../services/ServiceManagementService');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const mongoose = require('mongoose');
+const { isValidId } = require('../db/objectId');
 const PHONE_REGEX = /^\+?[1-9]\d{9,14}$/;
 
 // Accepted mimetypes for import uploads. Browsers/OSes send inconsistent
@@ -75,6 +75,11 @@ function extractUploadedExcelFile(request, context) {
   }
 
   return { file: uploadedFile };
+}
+
+// A repeated query param arrives as an array, which matches any of its values.
+function equalsAnyOf(value) {
+  return Array.isArray(value) ? { $in: value } : value;
 }
 
 function fileValidationOrServerError(err, context, logLabel) {
@@ -180,7 +185,9 @@ async function getSubmissions(request, context) {
     // Sorting
     const sortBy = query.sortBy || 'createdAt';
     const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
-    const sort = { [sortBy]: sortOrder };
+    // JSON columns have no ordering in PostgreSQL; sorting by them was
+    // meaningless (and harmless) in Mongo, so they just don't sort here.
+    const sort = CaSubmission.fields[sortBy]?.type === 'json' ? {} : { [sortBy]: sortOrder };
 
     // Build filter query
     const filter = {};
@@ -192,7 +199,7 @@ async function getSubmissions(request, context) {
 
     // Mobile filter (exact match)
     if (query.mobile) {
-      filter.mobile = query.mobile;
+      filter.mobile = equalsAnyOf(query.mobile);
     }
 
     // Email filter (case-insensitive partial match)
@@ -212,7 +219,7 @@ async function getSubmissions(request, context) {
 
     // Source filter
     if (query.source) {
-      filter.source = query.source;
+      filter.source = equalsAnyOf(query.source);
     }
 
     // Date range filters
@@ -241,12 +248,8 @@ async function getSubmissions(request, context) {
 
     // Execute query
     const [submissions, totalCount] = await Promise.all([
-      CaSubmission.find(filter)
-        .select('-rawData') // Exclude raw data from response
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      // Exclude raw data from response. Mongo read a negative limit as its absolute value.
+      CaSubmission.find(filter, { select: '-rawData', sort, skip, limit: Math.abs(limit) }),
       CaSubmission.countDocuments(filter)
     ]);
 
@@ -305,9 +308,7 @@ async function getSubmissionById(request, context) {
       };
     }
 
-    const submission = await CaSubmission.findById(id)
-      .select('-rawData')
-      .lean();
+    const submission = await CaSubmission.findById(id, { select: '-rawData' });
 
     if (!submission) {
       return {
@@ -548,30 +549,6 @@ async function searchSubmissions(request, context) {
       // Regex: query appears anywhere in the field (fuzzy fallback — "raman", "naman")
       const anywhereRegex = new RegExp(escapedQ.split('').join('[\\s\\-\\.]*'), 'i');
 
-      // Helper that produces a $switch expression scoring one string field
-      const scoreField = (fieldPath) => ({
-        $switch: {
-          branches: [
-            // Exact whole-word match — highest priority
-            {
-              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: exactWordRegex } },
-              then: 4
-            },
-            // A word starts with the query (but is longer, e.g. "amandeep")
-            {
-              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: wordStartRegex } },
-              then: 3
-            },
-            // Query appears anywhere in the field
-            {
-              case: { $regexMatch: { input: { $ifNull: [`$${fieldPath}`, ''] }, regex: anywhereRegex } },
-              then: 2
-            }
-          ],
-          default: 0
-        }
-      });
-
       // ---- PRIORITY fields: name, email, service details, otherServices ----
       // A match here always outranks a match that only touches secondary fields.
       const primaryFields = [
@@ -587,55 +564,31 @@ async function searchSubmissions(request, context) {
         'remarks', 'employer'
       ];
 
-      const scoringPipeline = [
-        { $match: filter },
-        {
-          $addFields: {
-            // Best match quality score across primary fields
-            _primaryScore: { $max: primaryFields.map(f => scoreField(f)) },
-            // Best match quality score across secondary fields
-            _secondaryScore: { $max: secondaryFields.map(f => scoreField(f)) }
-          }
-        },
-        // Sort: primary match first, then secondary, then newest
-        { $sort: { _primaryScore: -1, _secondaryScore: -1, timestamp: -1 } },
-        { $project: { rawData: 0 } }
-      ];
+      const scoredSearch = { filter, primaryFields, secondaryFields, exactWordRegex, wordStartRegex, anywhereRegex, limit };
 
       if (skip === 0) {
         const [results, count] = await Promise.all([
-          CaSubmission.aggregate([
-            ...scoringPipeline,
-            { $limit: limit }
-          ]),
+          CaSubmission.searchScored(scoredSearch),
           CaSubmission.countDocuments(filter)
         ]);
         submissions = results;
         totalCount = count;
       } else {
-        submissions = await CaSubmission.aggregate([
-          ...scoringPipeline,
-          { $skip: skip },
-          { $limit: limit }
-        ]);
+        submissions = await CaSubmission.searchScored({ ...scoredSearch, skip });
         totalCount = null;
       }
     } else {
       // No searchQuery – use the fast find() path (unchanged behaviour)
-      const projection = { rawData: 0 };
+      const select = '-rawData';
       const sort = { timestamp: -1 };
 
       if (skip === 0) {
         [submissions, totalCount] = await Promise.all([
-          CaSubmission.find(filter, projection).sort(sort).limit(limit).lean(),
+          CaSubmission.find(filter, { select, sort, limit: Math.abs(limit) }),
           CaSubmission.countDocuments(filter)
         ]);
       } else {
-        submissions = await CaSubmission.find(filter, projection)
-          .sort(sort)
-          .skip(skip)
-          .limit(limit)
-          .lean();
+        submissions = await CaSubmission.find(filter, { select, sort, skip, limit: Math.abs(limit) });
         totalCount = null;
       }
     }
@@ -688,128 +641,22 @@ async function getStats(request, context) {
       CaSubmission.countDocuments(),
 
       // Group by state
-      CaSubmission.aggregate([
-        {
-          $project: {
-            stateNormalized: { $toLower: { $trim: { input: "$state" } } }
-          }
-        },
-        {
-          $group: {
-            _id: "$stateNormalized",
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
-      ]),
-
+      CaSubmission.countByLocationField('state'),
 
       // Group by city
-      CaSubmission.aggregate([
-        {
-          $project: {
-            cityNormalized: { $toLower: { $trim: { input: "$city" } } }
-          }
-        },
-        {
-          $group: {
-            _id: "$cityNormalized",
-            count: { $sum: 1 }
-          }
-        },
-        { $sort: { count: -1 } },
-        { $limit: 10 }
-      ]),
+      CaSubmission.countByLocationField('city'),
 
       // Group by source
-      CaSubmission.aggregate([
-        { $group: { _id: '$source', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-      ]),
+      CaSubmission.countBySource(),
 
       // Count services offered - NEW: works with services.{key}.offered structure
-      CaSubmission.aggregate([
-        {
-          $facet: {
-            // ---------------- NORMAL SERVICES ----------------
-            structuredServices: [
-              {
-                $project: {
-                  servicesArray: { $objectToArray: '$services' }
-                }
-              },
-              { $unwind: '$servicesArray' },
-              {
-                $match: {
-                  'servicesArray.v.offered': true
-                }
-              },
-              {
-                $group: {
-                  _id: '$servicesArray.k',
-                  count: { $sum: 1 }
-                }
-              }
-            ],
-
-            // ---------------- OTHER SERVICES ----------------
-            otherServices: [
-              {
-                $match: {
-                  otherServices: { $regex: /\S/ } // exists & not empty
-                }
-              },
-              {
-                $group: {
-                  _id: 'other',
-                  count: { $sum: 1 }
-                }
-              }
-            ]
-          }
-        },
-
-        // ---------------- MERGE RESULTS ----------------
-        {
-          $project: {
-            merged: { $concatArrays: ['$structuredServices', '$otherServices'] }
-          }
-        },
-        { $unwind: '$merged' },
-        { $replaceRoot: { newRoot: '$merged' } },
-
-        // ---------------- SORT ----------------
-        { $sort: { count: -1 } }
-      ])
+      CaSubmission.countByOfferedService()
     ]);
 
     // Get average service count per CA
-    const avgServicesResult = await CaSubmission.aggregate([
-      {
-        $project: {
-          serviceCount: {
-            $size: {
-              $filter: {
-                input: { $objectToArray: '$services' },
-                as: 'service',
-                cond: { $eq: ['$$service.v.offered', true] }
-              }
-            }
-          }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          avgServices: { $avg: '$serviceCount' },
-          maxServices: { $max: '$serviceCount' },
-          minServices: { $min: '$serviceCount' }
-        }
-      }
-    ]);
+    const avgServicesResult = await CaSubmission.offeredServiceCountStats();
 
-    const avgServices = avgServicesResult[0] || { avgServices: 0, maxServices: 0, minServices: 0 };
+    const avgServices = avgServicesResult || { avgServices: 0, maxServices: 0, minServices: 0 };
 
     return {
       status: 200,
@@ -866,10 +713,11 @@ async function getServiceStats(request, context) {
 
         const count = await CaSubmission.countDocuments(filter);
 
-        const sampleCAs = await CaSubmission.find(filter)
-          .select('name city state')
-          .limit(5)
-          .lean();
+        const sampleCAs = await CaSubmission.find(filter, {
+          select: 'name city state',
+          sort: { _id: 1 },
+          limit: 5
+        });
 
         const percentage =
           totalCAs > 0
@@ -954,12 +802,7 @@ async function getByService(request, context) {
 
     // Execute query
     const [submissions, totalCount] = await Promise.all([
-      CaSubmission.find(filter)
-        .select('-rawData')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      CaSubmission.find(filter, { select: '-rawData', sort: { createdAt: -1 }, skip, limit: Math.abs(limit) }),
       CaSubmission.countDocuments(filter)
     ]);
 
@@ -1017,7 +860,7 @@ async function deleteSubmission(request, context) {
       };
     }
 
-    const result = await CaSubmission.findByIdAndDelete(id);
+    const result = await CaSubmission.deleteById(id);
 
     if (!result) {
       return {
@@ -1251,9 +1094,9 @@ async function validateCaContacts(request, context) {
       };
     }
 
-    const validIds = ids.filter(id =>
-      mongoose.Types.ObjectId.isValid(id)
-    );
+    // ObjectId.isValid() also accepted numbers, which could never match a
+    // real id: they count as "valid" here but are left out of the lookup.
+    const validIds = ids.filter(id => isValidId(id) || typeof id === 'number');
 
     if (validIds.length === 0) {
       return {
@@ -1267,9 +1110,9 @@ async function validateCaContacts(request, context) {
 
     // ---------- Fetch CAs ----------
     const cas = await CaSubmission.find(
-      { _id: { $in: validIds } },
-      'name email newEmail whatsappNumber mobile'
-    ).lean();
+      { _id: { $in: validIds.filter(isValidId) } },
+      { select: 'name email newEmail whatsappNumber mobile', sort: { _id: 1 } }
+    );
 
     // ---------- Validation Logic ----------
     const results = cas.map(ca => {

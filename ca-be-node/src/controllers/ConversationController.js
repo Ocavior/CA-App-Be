@@ -1,7 +1,7 @@
 // controllers/ConversationsController.js
 const axios = require('axios');
 
-const WHATSAPP_API_BASE =  // process.env.WHATSAPP_API_BASE_URL ||
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL ||
   'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
 
 async function getConversations(request, context) {

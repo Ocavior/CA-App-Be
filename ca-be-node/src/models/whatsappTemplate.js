@@ -1,54 +1,41 @@
-const mongoose = require('mongoose');
+const { defineModel } = require('../db/model');
+const { castDocument, castUpdate, duplicateKeyError } = require('./schemaSupport');
 
-const BodyParamSchema = new mongoose.Schema(
-  {
-    label: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    type: {
-      type: String,
-      enum: ['string', 'number', 'boolean'],
-      default: 'string'
-    }
-  },
-  { _id: false }
-);
-
-const WhatsappTemplateSchema = new mongoose.Schema(
-  {
-    template_name: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true
-    },
-
-    preview: {
-      type: String,
-      required: true
-    },
-
-    bodyParams: {
-      type: [BodyParamSchema],
-      default: []
-    },
-
-    isActive: {
-      type: Boolean,
-      default: true
-    },
-
-    source: {
-      type: String,
-      enum: ['manual', 'import'],
-      default: 'manual'
-    }
-  },
-  {
-    timestamps: true
+const base = defineModel({
+  modelName: 'WhatsappTemplate',
+  table: 'whatsapp_templates',
+  columns: {
+    template_name: { column: 'template_name', type: 'text' },
+    preview: { column: 'preview', type: 'text' },
+    bodyParams: { column: 'body_params', type: 'json' },
+    isActive: { column: 'is_active', type: 'bool' },
+    source: { column: 'source', type: 'text' }
   }
-);
+});
 
-module.exports = mongoose.model('WhatsappTemplate', WhatsappTemplateSchema);
+const bodyParamSchema = {
+  label: { type: 'string', required: true, trim: true },
+  type: { type: 'string', enum: ['string', 'number', 'boolean'], default: 'string' }
+};
+
+const schema = {
+  template_name: { type: 'string', required: true, trim: true },
+  preview: { type: 'string', required: true },
+  bodyParams: { type: 'array', of: bodyParamSchema },
+  isActive: { type: 'boolean', default: true },
+  source: { type: 'string', enum: ['manual', 'import'], default: 'manual' }
+};
+
+const rethrow = (err) => { throw duplicateKeyError(err, 'whatsapptemplates', base.fields); };
+
+module.exports = {
+  ...base,
+
+  create(input) {
+    return base.insert(castDocument('WhatsappTemplate', schema, input)).catch(rethrow);
+  },
+
+  updateById(id, changes, options) {
+    return base.updateById(id, castUpdate('WhatsappTemplate', schema, changes), options).catch(rethrow);
+  }
+};

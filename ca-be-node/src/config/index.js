@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const config = {
     nodeEnv: process.env.NODE_ENV || 'development',
-    mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/azurefunction',
+    databaseUrl: process.env.DATABASE_URL,
     jwtSecret: process.env.JWT_SECRET,
     jwtExpire: process.env.JWT_EXPIRE,
     corsOrigin: process.env.CORS_ORIGIN,

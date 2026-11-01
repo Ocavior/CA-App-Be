@@ -64,7 +64,7 @@ describe('WhatsApp Templates - known issues', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
-    const stored = await db.models.WhatsappTemplate.findById(template._id).lean();
+    const stored = await db.models.WhatsappTemplate.findById(template._id);
     expect(stored.preview).toBe(template.preview); // unchanged, despite the 200
   });
 

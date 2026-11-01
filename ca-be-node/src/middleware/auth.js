@@ -30,7 +30,7 @@ const auth = {
       console.log("decoded token:", decoded);
 
       // Fetch user details from the database
-      const user = await Admin.findById(decoded.userId).select("-password");
+      const user = await Admin.findById(decoded.userId, { select: "-password" });
 
       if (!user) {
         console.log("No User found");

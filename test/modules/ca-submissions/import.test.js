@@ -100,7 +100,7 @@ describe('CA Submissions - Import (/ca/import, /ca/import/preview)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({ inserted: 1, updated: 0 });
 
-      const stored = await db.models.CaSubmission.findOne({ mobile: '+919990003333' }).lean();
+      const stored = await db.models.CaSubmission.findOne({ mobile: '+919990003333' });
       expect(stored).not.toBeNull();
       expect(stored.name).toBe('Committed CA');
     });
@@ -145,7 +145,7 @@ describe('CA Submissions - Import (/ca/import, /ca/import/preview)', () => {
       expect(res.body.data).toMatchObject({ inserted: 1, skipped: 1 });
       expect(res.body.data.errors[0].error).toMatch(/Duplicate of row 2/);
 
-      const stored = await db.models.CaSubmission.findOne({ mobile: '+919990005555' }).lean();
+      const stored = await db.models.CaSubmission.findOne({ mobile: '+919990005555' });
       expect(stored.name).toBe('First Row Wins');
     });
 

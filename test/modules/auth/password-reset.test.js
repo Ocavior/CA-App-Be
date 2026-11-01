@@ -98,10 +98,8 @@ describe('Auth - password reset flow', () => {
       await agent.post(apiPath('/auth/reset-password-request')).send({ email: credentials.email });
       const otp = await getOtpFor(credentials.email);
 
-      await db.models.Admin.updateOne(
-        { email: credentials.email.toLowerCase() },
-        { $set: { resetPasswordExpire: new Date(Date.now() - 1000) } }
-      );
+      const admin = await db.models.Admin.findOne({ email: credentials.email.toLowerCase() });
+      await db.models.Admin.updateById(admin._id, { resetPasswordExpire: new Date(Date.now() - 1000) });
 
       const res = await agent
         .post(apiPath('/auth/verify-reset-token'))

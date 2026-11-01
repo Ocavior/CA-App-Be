@@ -2,36 +2,35 @@
 // connection from whatever the server-under-test holds (it runs in its own
 // process) - it exists purely so tests can set up and tear down state fast
 // and deterministically without going through the HTTP API for every fixture.
-// Reuses the app's real Mongoose schemas (src/models/*) so fixtures get the
-// same validation/hooks (e.g. mobile normalization, sparse email index) real
-// requests would produce.
-const mongoose = require('mongoose');
+// Reuses the app's real models (ca-be-node/src/models/*) so fixtures get the
+// same validation/normalization (e.g. mobile normalization) real requests
+// would produce.
 const env = require('../config/env');
 
-const Admin = require('../../src/models/admin');
-const CaSubmission = require('../../src/models/caData');
-const Service = require('../../src/models/service');
-const WhatsappTemplate = require('../../src/models/whatsappTemplate');
+// Must happen before the models load: the app's pool reads DATABASE_URL, and
+// this is what guarantees fixtures only ever touch the guarded test database,
+// whatever the surrounding shell or ca-be-node/.env says.
+process.env.DATABASE_URL = env.TEST_DATABASE_URL;
 
-let connected = false;
+const { query, closePool } = require('../../ca-be-node/src/db/pool');
+const Admin = require('../../ca-be-node/src/models/admin');
+const CaSubmission = require('../../ca-be-node/src/models/caData');
+const Service = require('../../ca-be-node/src/models/service');
+const WhatsappTemplate = require('../../ca-be-node/src/models/whatsappTemplate');
 
 async function connect() {
-  if (connected) return;
-  await mongoose.connect(env.TEST_MONGODB_URI);
-  connected = true;
+  await query('SELECT 1');
 }
 
 async function disconnect() {
-  if (!connected) return;
-  await mongoose.connection.close();
-  connected = false;
+  await closePool();
 }
 
 const MODELS = { Admin, CaSubmission, Service, WhatsappTemplate };
 
 /**
- * Deletes all documents from the given collections (default: every
- * collection this app owns). Does not drop the database.
+ * Deletes all rows from the given models' tables (default: every table this
+ * app owns; sub-services go with their service via ON DELETE CASCADE).
  *
  * Pass an explicit subset - e.g. cleanDatabase(['CaSubmission']) - in a
  * per-test beforeEach when a fixture admin/token was registered once in

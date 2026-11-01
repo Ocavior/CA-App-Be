@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Keeps the API running on this Mac: starts at login, restarts on crash.
+     Install with ops/install-service.sh, which fills in the placeholders. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ocavior.ca-app-be</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>src/index.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__APP_DIR__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/server.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/server.log</string>
+</dict>
+</plist>

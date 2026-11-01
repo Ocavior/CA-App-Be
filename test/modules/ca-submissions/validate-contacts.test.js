@@ -23,8 +23,8 @@ describe('CA Submissions - POST /ca/validate-contacts', () => {
     const valid = await createCaSubmission({ email: 'valid@example.test' });
     const invalid = await createCaSubmission({ email: undefined, name: 'No proper email' });
     // Force an "invalid" shaped value directly (create() would strip a bad
-    // email via the pre-save hook), so seed it past the hook with updateOne.
-    await db.models.CaSubmission.updateOne({ _id: invalid._id }, { $set: { email: 'not-an-email' } });
+    // email), so seed it past that with a direct update.
+    await db.models.CaSubmission.updateById(invalid._id, { email: 'not-an-email' });
 
     const res = await agent
       .post(apiPath('/ca/validate-contacts'))

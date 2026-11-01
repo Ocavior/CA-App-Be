@@ -8,10 +8,7 @@
     "dev": "func start --javascript",
     "test": "cross-env NODE_ENV=test jest --runInBand",
     "test:watch": "cross-env NODE_ENV=test jest --runInBand --watch",
-    "test:azure": "cross-env NODE_ENV=test BASE_URL=http://127.0.0.1:7071 jest --runInBand",
-    "test:node-server": "cross-env NODE_ENV=test BASE_URL=http://127.0.0.1:3000 jest --runInBand",
-    "test:mocks": "node test/mocks/externalServicesServer.js",
-    "test:local-mongo": "node test/mocks/startTestMongo.js"
+    "test:mocks": "node test/mocks/externalServicesServer.js"
   },
   "dependencies": {
     "@azure/communication-sms": "^1.2.0-beta.3",

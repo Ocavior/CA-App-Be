@@ -1,8 +1,11 @@
 const axios = require('axios');
-const mongoose = require('mongoose');
 const env = require('./env');
 
 module.exports = async function globalSetup() {
+  // Set before loading the pool, which reads DATABASE_URL when first used.
+  process.env.DATABASE_URL = env.TEST_DATABASE_URL;
+  const { query, closePool } = require('../../ca-be-node/src/db/pool');
+
   // 1. Mock external-services server (WhatsApp backend + Email API stand-ins)
   try {
     await axios.get(`${env.MOCK_SERVER_URL}/_mock/health`, { timeout: 3000 });
@@ -16,25 +19,27 @@ module.exports = async function globalSetup() {
     );
   }
 
-  // 2. Server under test (Azure Functions host or the Node server, whichever BASE_URL points at)
+  // 2. Server under test (ca-be-node, at whatever BASE_URL points at)
   try {
     await axios.get(`${env.BASE_URL}${env.API_PREFIX}/ca/health`, { timeout: 5000 });
   } catch (err) {
     throw new Error(
       `\n\nServer under test is not reachable at ${env.BASE_URL}${env.API_PREFIX}/ca/health.\n` +
-      `Start either the Azure Functions host ("func start") or the target Node server, pointed ` +
-      `at TEST_MONGODB_URI and the mock services server, then re-run tests. See test/README.md.\n`
+      `Start ca-be-node with DATABASE_URL set to TEST_DATABASE_URL and pointed at the mock ` +
+      `services server, then re-run tests. See test/README.md.\n`
     );
   }
 
   // 3. Direct DB connectivity check (the fixtures/helpers connect for real per test file)
   try {
-    await mongoose.connect(env.TEST_MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
-    await mongoose.disconnect();
+    await query('SELECT 1 FROM schema_migrations LIMIT 1');
   } catch (err) {
     throw new Error(
-      `\n\nCould not connect directly to TEST_MONGODB_URI ("${env.TEST_MONGODB_URI.replace(/\/\/.*@/, '//<redacted>@')}").\n` +
+      `\n\nCould not query TEST_DATABASE_URL ("${env.TEST_DATABASE_URL.replace(/\/\/.*@/, '//<redacted>@')}"). ` +
+      `Is PostgreSQL up and the schema applied? See test/README.md.\n` +
       `Original error: ${err.message}\n`
     );
+  } finally {
+    await closePool();
   }
 };

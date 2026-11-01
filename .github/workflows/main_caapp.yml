@@ -6,6 +6,12 @@ on:
   push:
     branches:
       - main
+    # ca-be-node deploys separately (deploy-ca-be-node.yml). A root dependency
+    # change needs a manual run of this workflow.
+    paths:
+      - 'src/**'
+      - 'HttpTrigger1/**'
+      - 'host.json'
   workflow_dispatch:
 
 env:

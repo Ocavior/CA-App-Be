@@ -1,8 +1,9 @@
 // services/CaSubmissionImportService.js
 const XLSX = require('xlsx');
-const mongoose = require('mongoose');
 const CaSubmission = require('../models/caData');
 const ServiceManagementService = require('../services/ServiceManagementService');
+const { withTransaction } = require('../db/pool');
+const { generateId } = require('../db/objectId');
 const { normalizeName } = require('../utils/aliasUtils');
 const { cleanPhoneNumber, last10Digits } = require('../utils/phoneUtils');
 
@@ -299,8 +300,8 @@ async function mapRowToDoc(raw, headerRowMap, matchCtx) {
         case 'mobile':
           if (cellValue) {
             doc.mobile = cleanPhoneNumber(cellValue);
-            // Bulk insert/update ops (see processExcel) bypass the model's
-            // pre-save/pre-update hooks entirely, so mobileLast10 has to be
+            // Import writes (see processExcel) bypass the model's
+            // create/update normalization, so mobileLast10 has to be
             // set here explicitly rather than relying on those hooks.
             doc.mobileLast10 = last10Digits(doc.mobile);
           }
@@ -440,7 +441,9 @@ function registerInMatchIndex(index, doc, id) {
 
 async function buildCaMatchIndex() {
   const index = buildEmptyMatchIndex();
-  const existing = await CaSubmission.find({}, 'mobile mobileLast10 email name').lean();
+  // Ordered so that when two records share a key, the newer one wins the map
+  // slot deterministically.
+  const existing = await CaSubmission.find({}, { select: 'mobile mobileLast10 email name', sort: { _id: 1 } });
 
   for (const rec of existing) {
     registerInMatchIndex(index, rec, rec._id);
@@ -472,9 +475,9 @@ function resolveMatch(doc, index) {
   return { key: `name:${doc.name}`, existingId: index.byName.get(doc.name) || null };
 }
 
-// Bulk-write ops are flushed in chunks rather than one at a time (a round
-// trip per row) or all at the very end (loses all progress if the request
-// is interrupted mid-import).
+// Writes are flushed in chunks rather than one at a time (a commit per row)
+// or all at the very end (loses all progress if the request is interrupted
+// mid-import).
 const BULK_CHUNK_SIZE = 200;
 
 /**
@@ -530,38 +533,33 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
   // the earlier row's data with no explanation.
   const seenKeys = new Map();
 
-  // Accumulated bulk write ops, flushed every BULK_CHUNK_SIZE rows instead
-  // of a DB round trip per row. Counts are finalized only once a flush
-  // confirms which ops actually succeeded, so a partial bulk failure still
-  // attributes the error to the right row instead of over/under-counting.
+  // Accumulated writes, flushed every BULK_CHUNK_SIZE rows instead of a commit
+  // per row. Counts are finalized only once a flush confirms which writes
+  // actually succeeded, so a failing row still attributes the error to the
+  // right row instead of over/under-counting.
   let pendingOps = [];
 
   async function flushPendingOps() {
     if (!pendingOps.length) return;
 
-    try {
-      await CaSubmission.bulkWrite(pendingOps.map(p => p.op), { ordered: false });
+    // One transaction per chunk keeps commits cheap; the savepoint per row
+    // means a failing row is reported against its own row number and doesn't
+    // take the rest of the chunk down with it.
+    await withTransaction(async (client) => {
       for (const p of pendingOps) {
-        if (p.kind === 'insert') inserted++; else updated++;
-      }
-    } catch (err) {
-      const writeErrors = err.writeErrors || [];
-      const failedByIndex = new Map(writeErrors.map(we => [we.index, we]));
-
-      pendingOps.forEach((p, idx) => {
-        const we = failedByIndex.get(idx);
-        if (we) {
+        await client.query('SAVEPOINT import_row');
+        try {
+          await p.run(client);
+          await client.query('RELEASE SAVEPOINT import_row');
+          if (p.kind === 'insert') inserted++; else updated++;
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT import_row');
           skipped++;
-          const msg = we.errmsg || we.err?.errmsg || err.message;
-          errors.push({ row: p.rowNum, error: msg, data: p.raw });
-          if (debug) console.log(`Row ${p.rowNum}: Error - ${msg}`);
-        } else if (p.kind === 'insert') {
-          inserted++;
-        } else {
-          updated++;
+          errors.push({ row: p.rowNum, error: err.message, data: p.raw });
+          if (debug) console.log(`Row ${p.rowNum}: Error - ${err.message}`);
         }
-      });
-    }
+      }
+    });
 
     pendingOps = [];
   }
@@ -604,7 +602,7 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
             updated++;
           } else {
             inserted++;
-            registerInMatchIndex(matchIndex, doc, new mongoose.Types.ObjectId());
+            registerInMatchIndex(matchIndex, doc, generateId());
           }
         } else {
           inserted++;
@@ -614,45 +612,29 @@ async function processExcel({ buffer = null, filePath = null, commit, upsert = t
 
       if (upsert) {
         if (existingId) {
-          // Validate what would land in $set the same way runValidators
-          // would have - bulkWrite skips Mongoose validation entirely.
-          const validationError = new CaSubmission({ _id: existingId, ...doc }).validateSync();
-          if (validationError) throw validationError;
+          // Validate what would land in the update the same way a fresh
+          // document would be validated; the write itself skips the model's
+          // hooks, since mapRowToDoc already normalized everything they'd do.
+          CaSubmission.castForInsert(doc);
+          const changes = CaSubmission.castForUpdate(doc);
 
           pendingOps.push({
             rowNum,
             raw,
             kind: 'update',
-            op: {
-              updateOne: {
-                filter: { _id: existingId },
-                update: { $set: { ...doc, updatedAt: new Date() } }
-              }
-            }
+            run: (client) => CaSubmission.updateById(existingId, changes, { client })
           });
         } else {
-          const newId = new mongoose.Types.ObjectId();
-          // Constructing (not saving) still applies schema defaults
-          // (isActive, services, timestamp, etc.) - only the custom hooks
-          // and the timestamps plugin are skipped, so createdAt/updatedAt
-          // are set explicitly below. flattenMaps is required so the Map
-          // schema type (services) serializes as a plain object for the
-          // raw insertOne op instead of a live Map instance.
-          const newDoc = new CaSubmission({
-            _id: newId,
-            ...doc,
-            importedAt: new Date(),
-            createdAt: new Date(),
-            updatedAt: new Date()
-          });
-          const validationError = newDoc.validateSync();
-          if (validationError) throw validationError;
+          const newId = generateId();
+          // Applies schema defaults (isActive, services, timestamp, etc.) and
+          // validation, without the custom hooks.
+          const newDoc = CaSubmission.castForInsert({ ...doc, _id: newId });
 
           pendingOps.push({
             rowNum,
             raw,
             kind: 'insert',
-            op: { insertOne: { document: newDoc.toObject({ flattenMaps: true }) } }
+            run: (client) => CaSubmission.insert(newDoc, { client })
           });
 
           // So a later row in this same file can match this record via a
@@ -731,11 +713,7 @@ async function createCaSubmission(payload) {
     data.mobile = cleanPhoneNumber(data.mobile);
   }
 
-  const doc = await CaSubmission.create(data);
-  // flattenMaps: without it, Map-typed fields (services) serialize to `{}`
-  // when the response is JSON-stringified - the save itself is correct,
-  // but the echoed-back document would look like it lost the data.
-  const obj = doc.toObject({ flattenMaps: true });
+  const obj = await CaSubmission.create(data);
 
   if (obj.rawData !== undefined) {
     delete obj.rawData;
@@ -754,14 +732,7 @@ async function updateCaSubmission(id, payload) {
     data.mobile = cleanPhoneNumber(data.mobile);
   }
 
-  const updated = await CaSubmission
-    .findByIdAndUpdate(
-      id,
-      { $set: data },
-      { new: true, runValidators: true }
-    )
-    .select('-rawData')
-    .lean();
+  const updated = await CaSubmission.updateValidated(id, data, { select: '-rawData' });
 
   return updated;
 }
@@ -775,14 +746,9 @@ async function toggleCaActive(id, explicitValue = null) {
     throw err;
   }
 
-  if (typeof explicitValue === 'boolean') {
-    ca.isActive = explicitValue;
-  } else {
-    ca.isActive = !ca.isActive;
-  }
+  const isActive = typeof explicitValue === 'boolean' ? explicitValue : !ca.isActive;
 
-  await ca.save();
-  return ca;
+  return CaSubmission.saveChanges(ca, { isActive });
 }
 
 module.exports = {

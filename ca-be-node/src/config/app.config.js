@@ -1,7 +1,7 @@
 require('dotenv').config();
 module.exports = {
-    // MongoDB
-    mongodbUri: process.env.MONGODB_URI,
+    // PostgreSQL
+    databaseUrl: process.env.DATABASE_URL,
     API_VERSION: process.env.API_VERSION,
     APP_NAME: process.env.APP_NAME,
     // Server

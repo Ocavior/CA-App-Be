@@ -23,14 +23,9 @@ describe('Services - known issues', () => {
     await db.cleanDatabase(['Service']);
   });
 
-  // updateService's alias field has no pre-check against the existing unique
-  // index the way createService's auto-generation does - it just passes
-  // whatever alias the caller supplies straight to findByIdAndUpdate. A
-  // collision with another service's alias surfaces as a raw, unformatted
-  // MongoDB E11000 duplicate-key error via the generic 500 branch, not a
-  // clean 400/409 with a friendly message like the equivalent sub-service
-  // paths get.
-  it('#no-precheck - updating alias to collide with another service raises a raw Mongo E11000, not a clean error', async () => {
+  // ca-be-node's updateService refuses any alias change outright, so a collision
+  // with another service's alias can never reach the unique index.
+  it('updating alias is refused because aliases are immutable after creation', async () => {
     await createService({ name: 'Income Tax', alias: 'incomeTax' });
     const other = await createService({ name: 'GST', alias: 'gst' });
 
@@ -39,9 +34,9 @@ describe('Services - known issues', () => {
       .set(authHeader(token))
       .send({ alias: 'incomeTax' });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
-    expect(res.body.message).toMatch(/E11000 duplicate key error/);
+    expect(res.body.message).toMatch(/alias cannot be changed/);
   });
 
   // createService has no equivalent pre-check either, for the exact same

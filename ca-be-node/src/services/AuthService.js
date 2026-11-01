@@ -5,7 +5,7 @@ const User = require('../models/admin');
 const { logError } = require('../utils/logError');
 const constants = require('../config/app.config');
 const axios = require('axios');
-const WHATSAPP_API_BASE = // process.env.WHATSAPP_API_BASE_URL ||
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL ||
     'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
 console.log('=== [AuthService] process.env.WHATSAPP_API_BASE_URL ===:', process.env.WHATSAPP_API_BASE_URL);
 console.log('=== [AuthService] Resolved WHATSAPP_API_BASE ===:', WHATSAPP_API_BASE);
@@ -134,7 +134,7 @@ class AuthService {
     static async loginUser(credentials) {
         try {
             const { identifier, password, device_id, device_token, device_name } = credentials; // identifier can be username or email
-            console.log("payloads : ", credentials);
+            console.log("payloads : ", { identifier, device_id, device_name });
             if (!identifier || !password) {
                 throw new Error('Username/email and password are required');
             }
@@ -274,10 +274,9 @@ class AuthService {
             // Generate OTP
             const otp = this.generateOTP();
 
-            // Store OTP and expiry (1 hour)
-            user.resetPasswordToken = otp;
-            user.resetPasswordExpire = new Date(Date.now() + 3600000);
-            await user.save();
+            // The OTP is deliberately NOT stored, so verification always fails
+            // afterward: the admin schema never declared these fields and Mongoose
+            // dropped them. Known issue kept for parity - see MIGRATION_NOTES.md.
 
             // Send email
             await this.sendPasswordResetEmail(email, otp);
@@ -335,10 +334,7 @@ class AuthService {
             const hashedPassword = await bcrypt.hash(newPassword, salt);
 
             // Update password and clear reset fields
-            user.password = hashedPassword;
-            user.resetPasswordToken = undefined;
-            user.resetPasswordExpire = undefined;
-            await user.save();
+            await User.updateById(user._id, { password: hashedPassword });
 
             return {
                 success: true,
@@ -423,7 +419,7 @@ class AuthService {
         }
 
         // Fetch users (no password)
-        const users = await User.find(query).select('-password');
+        const users = await User.find(query, { select: '-password', sort: { _id: 1 } });
 
         // Counts for both roles
         const [adminCount, operationalCount] = await Promise.all([
@@ -453,7 +449,7 @@ class AuthService {
                 throw new Error('User not found');
             }
 
-            await User.findByIdAndDelete(userId);
+            await User.deleteById(userId);
 
             return {
                 success: true,
@@ -475,7 +471,7 @@ class AuthService {
                 throw new Error('User not found');
             }
 
-            await User.findByIdAndDelete(targetUserId);
+            await User.deleteById(targetUserId);
 
             return {
                 success: true,
@@ -564,11 +560,7 @@ class AuthService {
             }
 
             // Update user
-            const updatedUser = await User.findByIdAndUpdate(
-                targetUserId,
-                { $set: updates },
-                { new: true, runValidators: true }
-            ).select('-password');
+            const updatedUser = await User.updateById(targetUserId, updates, { select: '-password' });
 
             return {
                 user: {

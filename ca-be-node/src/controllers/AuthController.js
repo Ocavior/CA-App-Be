@@ -31,7 +31,7 @@ class AuthController {
         try {
             const payload = await request.json() || {};
             context.log()
-            console.log("payload : ", payload);
+            console.log("payload : ", { identifier: payload.identifier, device_id: payload.device_id, device_name: payload.device_name });
             const responseData = await AuthService.loginUser(payload);
 
             return {

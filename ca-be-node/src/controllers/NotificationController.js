@@ -2,7 +2,7 @@
 const axios = require('axios');
 const { EmailApiService } = require('../services/EmailApiService');
 
-const WHATSAPP_API_BASE = // process.env.WHATSAPP_API_BASE_URL ||
+const WHATSAPP_API_BASE = process.env.WHATSAPP_API_BASE_URL ||
   'https://whatsapp-backend-ln7k.onrender.com/api/whatsapp';
 const WHATSAPP_BULK_API = `${WHATSAPP_API_BASE}/send/bulk`;
 const WHATSAPP_SEND_TEXT_API = `${WHATSAPP_API_BASE}/send/text`;

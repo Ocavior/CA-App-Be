@@ -1,38 +1,14 @@
-const mongoose = require('mongoose');
 const logger = require('../utils/logger');
-const constants = require('./app.config');
-
-let isConnected = false;
+const { query } = require('../db/pool');
 
 async function connectDB() {
-    if (isConnected) {
-        return;
-    }
-
     try {
-        const connectionString = constants.mongodbUri;
-    
-        await mongoose.connect(connectionString, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-        });
-
-        isConnected = true;
-        logger.info('MongoDB connected successfully');
-
-        mongoose.connection.on('error', (error) => {
-            logger.error('MongoDB connection error:', error);
-        });
-
-        mongoose.connection.on('disconnected', () => {
-            logger.warn('MongoDB disconnected');
-            isConnected = false;
-        });
-
+        await query('SELECT 1');
+        logger.info('PostgreSQL connected successfully');
     } catch (error) {
-        logger.error('MongoDB connection failed:', error);
-        // Don't throw error to prevent function app from crashing
-        // Consider implementing retry logic here
+        // Not fatal: the pool opens connections on demand, so routes recover on
+        // their own once the database is reachable again.
+        logger.error('PostgreSQL connection failed:', error);
     }
 }
 

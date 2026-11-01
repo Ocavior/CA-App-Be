@@ -211,7 +211,7 @@ describe('CA Submissions - CRUD', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.city).toBe('Mumbai');
 
-      const stored = await db.models.CaSubmission.findById(doc._id).lean();
+      const stored = await db.models.CaSubmission.findById(doc._id);
       expect(stored.city).toBe('Mumbai');
     });
 

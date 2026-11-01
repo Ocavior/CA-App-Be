@@ -36,7 +36,7 @@ describe('Auth - known issues', () => {
       .send({ email: credentials.email });
     expect(requestRes.status).toBe(200); // reports success...
 
-    const stored = await db.models.Admin.findOne({ email: credentials.email.toLowerCase() }).lean();
+    const stored = await db.models.Admin.findOne({ email: credentials.email.toLowerCase() });
     expect(stored.resetPasswordToken).toBeUndefined(); // ...but nothing was actually saved
 
     const verifyRes = await agent

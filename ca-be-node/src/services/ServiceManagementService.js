@@ -21,7 +21,7 @@ async function createService(payload = {}) {
 
   let alias = payload.alias && String(payload.alias).trim();
   if (!alias) {
-    const existing = await Service.find({}, 'alias').lean();
+    const existing = await Service.find({}, { select: 'alias' });
     alias = toAlias(payload.name, existing.map(s => s.alias));
   }
 
@@ -60,15 +60,13 @@ async function createService(payload = {}) {
     }
   }
 
-  const service = await Service.create({
+  return Service.create({
     name: payload.name.trim(),
     alias,
     isActive: payload.isActive !== false,
     source: payload.source || 'manual',
     subServices
   });
-
-  return service.toObject();
 }
 
 /**
@@ -76,7 +74,7 @@ async function createService(payload = {}) {
  */
 async function getAllServices({ activeOnly = false } = {}) {
   const query = activeOnly ? { isActive: true } : {};
-  const services = await Service.find(query).sort({ name: 1 }).lean();
+  const services = await Service.find(query, { sort: { name: 1 } });
 
   if (!activeOnly) return services;
 
@@ -87,7 +85,7 @@ async function getAllServices({ activeOnly = false } = {}) {
 }
 
 async function getServiceById(id) {
-  return Service.findById(id).lean();
+  return Service.findById(id);
 }
 
 async function updateService(id, payload = {}) {
@@ -103,13 +101,13 @@ async function updateService(id, payload = {}) {
     throw err;
   }
 
+  const changes = {};
   const allowed = ['name', 'isActive'];
   allowed.forEach(field => {
-    if (payload[field] !== undefined) service[field] = payload[field];
+    if (payload[field] !== undefined) changes[field] = payload[field];
   });
 
-  await service.save();
-  return service.toObject();
+  return Service.updateFields(service, changes);
 }
 
 /**
@@ -121,7 +119,7 @@ async function deleteService(id) {
   const service = await Service.findById(id);
   if (!service) throw notFoundError('Service not found');
 
-  await Service.deleteOne({ _id: id });
+  await Service.deleteById(id);
   return { _id: id };
 }
 
@@ -129,9 +127,9 @@ async function toggleServiceActive(id, explicitValue = null) {
   const service = await Service.findById(id);
   if (!service) throw notFoundError('Service not found');
 
-  service.isActive = typeof explicitValue === 'boolean' ? explicitValue : !service.isActive;
-  await service.save();
-  return service.toObject();
+  return Service.updateFields(service, {
+    isActive: typeof explicitValue === 'boolean' ? explicitValue : !service.isActive
+  });
 }
 
 async function addSubService(serviceId, payload = {}) {
@@ -153,7 +151,7 @@ async function addSubService(serviceId, payload = {}) {
     throw err;
   }
 
-  service.subServices.push({
+  const added = await Service.addSubService(service, {
     name: payload.name.trim(),
     alias,
     isOfferedDefault: !!payload.isOfferedDefault,
@@ -161,15 +159,14 @@ async function addSubService(serviceId, payload = {}) {
     source: payload.source || 'manual'
   });
 
-  await service.save();
-  return service.toObject();
+  return added.service;
 }
 
 async function updateSubService(serviceId, subServiceId, payload = {}) {
   const service = await Service.findById(serviceId);
   if (!service) throw notFoundError('Service not found');
 
-  const subService = service.subServices.id(subServiceId);
+  const subService = Service.findSubService(service, subServiceId);
   if (!subService) throw notFoundError('Sub-service not found');
 
   // Same reasoning as the service-level alias check: alias is the key
@@ -180,13 +177,13 @@ async function updateSubService(serviceId, subServiceId, payload = {}) {
     throw err;
   }
 
+  const changes = {};
   const allowed = ['name', 'isOfferedDefault', 'isActive'];
   allowed.forEach(field => {
-    if (payload[field] !== undefined) subService[field] = payload[field];
+    if (payload[field] !== undefined) changes[field] = payload[field];
   });
 
-  await service.save();
-  return service.toObject();
+  return Service.updateSubService(service, subService, changes);
 }
 
 /**
@@ -198,11 +195,10 @@ async function deleteSubService(serviceId, subServiceId) {
   const service = await Service.findById(serviceId);
   if (!service) throw notFoundError('Service not found');
 
-  const subService = service.subServices.id(subServiceId);
+  const subService = Service.findSubService(service, subServiceId);
   if (!subService) throw notFoundError('Sub-service not found');
 
-  subService.deleteOne();
-  await service.save();
+  await Service.removeSubService(service, subService);
   return { _id: subServiceId };
 }
 
@@ -210,12 +206,12 @@ async function toggleSubServiceActive(serviceId, subServiceId, explicitValue = n
   const service = await Service.findById(serviceId);
   if (!service) throw notFoundError('Service not found');
 
-  const subService = service.subServices.id(subServiceId);
+  const subService = Service.findSubService(service, subServiceId);
   if (!subService) throw notFoundError('Sub-service not found');
 
-  subService.isActive = typeof explicitValue === 'boolean' ? explicitValue : !subService.isActive;
-  await service.save();
-  return service.toObject();
+  return Service.updateSubService(service, subService, {
+    isActive: typeof explicitValue === 'boolean' ? explicitValue : !subService.isActive
+  });
 }
 
 /**
@@ -224,7 +220,7 @@ async function toggleSubServiceActive(serviceId, subServiceId, explicitValue = n
  * rather than hitting the DB per row.
  */
 async function getAllServicesForMatching() {
-  return Service.find({}).lean();
+  return Service.find({}, { sort: { _id: 1 } });
 }
 
 /**
@@ -232,18 +228,16 @@ async function getAllServicesForMatching() {
  * Used when an import encounters a service name that matches nothing known.
  */
 async function createPendingService(name) {
-  const existing = await Service.find({}, 'alias').lean();
+  const existing = await Service.find({}, { select: 'alias' });
   const alias = toAlias(name, existing.map(s => s.alias));
 
-  const service = await Service.create({
+  return Service.create({
     name: String(name).trim(),
     alias,
     isActive: true,
     source: 'csv_import',
     subServices: []
   });
-
-  return service.toObject();
 }
 
 /**
@@ -256,7 +250,7 @@ async function createPendingSubService(serviceId, name) {
 
   const alias = toAlias(name, service.subServices.map(ss => ss.alias));
 
-  service.subServices.push({
+  const added = await Service.addSubService(service, {
     name: String(name).trim(),
     alias,
     isOfferedDefault: false,
@@ -264,8 +258,7 @@ async function createPendingSubService(serviceId, name) {
     source: 'csv_import'
   });
 
-  await service.save();
-  return service.subServices[service.subServices.length - 1].toObject();
+  return added.subService;
 }
 
 module.exports = {

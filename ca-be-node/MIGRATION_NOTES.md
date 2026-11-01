@@ -1,5 +1,49 @@
 # Migration notes
 
+## MongoDB to PostgreSQL
+
+`ca-be-node` now runs on PostgreSQL through `src/db/` (plain `pg`, no ORM). The
+sections below this one predate that move and mention Mongoose where the
+original behavior came from; the behavior they describe is still preserved
+unless it is listed here. `src/db/filter.js` accepts the Mongo-style filters the
+controllers already built, so that logic did not need re-transcribing.
+
+Preserved on purpose: 24-hex `_id`s, `__v`, absent fields staying absent (NULL
+columns are omitted from responses), `CastError`/`E11000` error names and shapes,
+bytewise text sorting with NULLs low, API key order (`JSON`, not `JSONB`), and
+only one admin allowed without a phone number (`UNIQUE NULLS NOT DISTINCT`).
+
+Known differences from the MongoDB version:
+
+- **Order among ties.** Records sharing a sort value used to come back in Mongo's
+  natural order, which was never guaranteed; they now break ties by `_id`, which
+  also makes pagination stable. Same-batch imports can appear in a different order
+  or on a different page. Unsorted reads (`sampleCAs`, admin users) also use `_id`.
+- **Explicit nulls.** A stored `null` reads back as an absent field. Sending `null`
+  for `isActive` on a service or sub-service returns 500 instead of storing it, and
+  for a `NOT NULL` CA column it falls back to the default on create and is ignored
+  on update.
+- **User-supplied regex.** `name`, `email` and `employer` filters on
+  `/ca/submissions` pass unescaped text to the regex engine, now Postgres instead
+  of PCRE. An invalid pattern is still a 500 with different error text, and `.`
+  also matches newlines. A search containing `{` or `}` may behave differently.
+- **Sorting by a non-scalar field** (`sortBy=services`) is a no-op instead of
+  Mongo's arbitrary order. Dotted sort keys no longer sort.
+- **Import.** A NUL byte in a text field fails that row. A dropped connection
+  during a chunk fails the import with a 500, where the old `bulkWrite` catch
+  counted those rows as successes.
+- **Duplicate-key messages** name the table rather than `<db>.<collection>`.
+
+`connectDB()` no longer leaves the process broken after a bad boot: the pool opens
+connections on demand, so routes recover once PostgreSQL is reachable (this
+supersedes "Operational difference worth knowing" below).
+
+Removed: `src/migrations/*` (applied one-off Mongo scripts), `src/seed.js` and
+`src/seeds/seedData.js` (already broken: they required models and exports that do
+not exist in this app, and `seed.js` wiped all CA data first).
+
+## Azure Functions to Express
+
 `ca-be-node` is a deliberate bug-for-bug port of the Azure Functions app in
 the parent repo's `src/`, not a cleanup pass. This file catalogs every place
 where "verbatim" isn't quite as simple as copy-paste — either because a real,
