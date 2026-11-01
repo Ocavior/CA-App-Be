@@ -6,7 +6,7 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
-### [LOG-007] 2026-11-02 IST — Deployment to ca-app.ocvrs.in and CI/CD (In Progress)
+### [LOG-007] 2026-11-02 IST — Deployment to ca-app.ocvrs.in and CI/CD
 * **Requested By**: User
 * **User Instruction**:
   > *"provide the front en api point for the front end, deploy this api on this ocvrs.in with the name ca-app ... please do the deployment part and provide me the api, end point and also add ci/cd for this, so that commiting on main branch deploy the changes, you can commit the changes"*
@@ -23,7 +23,8 @@ This file records all requests, modifications, architectural decisions, and agen
   - The repo is public, so this branch must not record security details. The owner was told about the security items directly.
   - Render is still live. LOG-004 says merging to `main` redeploys it; with this code and no database it would break, so the merge waits for client cutover.
 * **Update, 2026-11-02**: The user authorized Cloudflare from Chrome. Created tunnel `ca-app` and the `ca-app.ocvrs.in` DNS record. `https://ca-app.ocvrs.in/api/v1` responds over HTTPS, tested for health, public and authenticated reads, auth rejection, and CORS preflight. The API and tunnel run as plain processes until `ops/setup-server.sh` is run by the user. A real-account login, and writes through the public URL, have not been tested.
-* **Status**: URL live, not yet permanent. CI/CD inactive until setup is run and the feature branch is merged to `main`.
+* **Update, 2026-11-02**: On the user's instruction: re-synced data from MongoDB (0 mismatches), ran `ops/setup-server.sh` (API, tunnel and auto-deploy now launchd services; API and tunnel confirmed to restart after being killed), and fast-forwarded `main` to `38aa319`. The first automatic deploy of `38aa319` passed tests (170 passed, 3 skipped) and released. The Azure workflow did not run for this commit.
+* **Status**: Completed. Remaining: frontend switch, real-account login test, and the failure and rollback path of auto-deploy, which has not been exercised.
 
 ---
 
