@@ -6,6 +6,27 @@ This file records all requests, modifications, architectural decisions, and agen
 
 ## 📅 Log Entries
 
+### [LOG-007] 2026-11-02 IST — Deployment to ca-app.ocvrs.in and CI/CD (In Progress)
+* **Requested By**: User
+* **User Instruction**:
+  > *"provide the front en api point for the front end, deploy this api on this ocvrs.in with the name ca-app ... please do the deployment part and provide me the api, end point and also add ci/cd for this, so that commiting on main branch deploy the changes, you can commit the changes"*
+* **Target Branches**: `feat/postgres-local-server`, committed and pushed. **Not merged to `main`.**
+* **Actions Taken**:
+  1. Confirmed `ocvrs.in` uses Cloudflare nameservers, so DNS is handled in Cloudflare and GoDaddy needs no change.
+  2. Installed `cloudflared`. Added `ops/setup-server.sh`, `ops/auto-deploy.sh`, `ops/deploy.sh`, `ops/ci-test.sh`, and the API reference `ca-be-node/API.md`.
+  3. Designed CI/CD as polling from this Mac. A GitHub Actions self-hosted runner was written first, then dropped on finding the repo is public.
+  4. Limited the Azure workflow to Azure app files, so `ca-be-node` commits stop triggering Azure deploys.
+  5. Updated the stale alias test to expect the intended 400. The suite is now fully green: 170 passed, 3 skipped.
+  6. Re-imported data from MongoDB with a clean verification.
+* **Blocked On**: The Chrome extension was not connected, so Cloudflare authorization needs the user. Installing launchd services was refused twice by the session permission policy, so `setup-server.sh` is for the user to run. **It has been syntax-checked but never run.**
+* **Findings**:
+  - The repo is public. The `himanshu` database password is in its git history (2 commits, earliest `05e35b8`), and `Calling Data Collection - Rishabh` spreadsheets are on `main`.
+  - Render is still live (HTTP 200). LOG-004 says merging to `main` redeploys it; with this code and no database it would break, so the merge waits for client cutover.
+  - `POST /auth/register` is public and defaults to role `admin`: anyone on the internet can create an admin account. This already applies to the Render deployment.
+* **Status**: In progress.
+
+---
+
 ### [LOG-006] 2026-11-02 IST — Migrated ca-be-node from Render + MongoDB to This Mac + Local PostgreSQL
 * **Requested By**: User
 * **User Instruction** (credentials omitted):

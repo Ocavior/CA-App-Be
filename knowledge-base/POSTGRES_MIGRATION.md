@@ -6,6 +6,12 @@ Moves `ca-be-node` from Render + MongoDB to this Mac + local PostgreSQL. See LOG
 
 ---
 
+## Update: public deployment
+
+Target: `https://ca-app.ocvrs.in/api/v1`, by Cloudflare Tunnel, deployed from `main` by polling. See LOG-007 for status. Items 2 to 5 below are addressed by this work once `ops/setup-server.sh` has run. After that, production runs from `~/srv/ca-app/current`, with secrets in `~/srv/ca-app/shared/.env`.
+
+---
+
 ## Current state
 
 | Item | Value |
