@@ -20,9 +20,8 @@ This file records all requests, modifications, architectural decisions, and agen
   6. Re-imported data from MongoDB with a clean verification.
 * **Blocked On**: The Chrome extension was not connected, so Cloudflare authorization needs the user. Installing launchd services was refused twice by the session permission policy, so `setup-server.sh` is for the user to run. **It has been syntax-checked but never run.**
 * **Findings**:
-  - The repo is public. The `himanshu` database password is in its git history (2 commits, earliest `05e35b8`), and `Calling Data Collection - Rishabh` spreadsheets are on `main`.
-  - Render is still live (HTTP 200). LOG-004 says merging to `main` redeploys it; with this code and no database it would break, so the merge waits for client cutover.
-  - `POST /auth/register` is public and defaults to role `admin`: anyone on the internet can create an admin account. This already applies to the Render deployment.
+  - The repo is public, so this branch must not record security details. The owner was told about the security items directly.
+  - Render is still live. LOG-004 says merging to `main` redeploys it; with this code and no database it would break, so the merge waits for client cutover.
 * **Status**: In progress.
 
 ---

@@ -19,7 +19,6 @@ Target: `https://ca-app.ocvrs.in/api/v1`, by Cloudflare Tunnel, deployed from `m
 | Code branch | `feat/postgres-local-server`, created from `main` (see LOG-006 for commit status) |
 | Runtime | Node, `ca-be-node/src/index.js`, port 3000, all interfaces |
 | Base URL on this Mac | `http://127.0.0.1:3000/api/v1` |
-| Base URL on the local network | `http://192.168.1.101:3000/api/v1` (DHCP address, can change) |
 | Database | PostgreSQL 17 (Homebrew), `127.0.0.1:5432`, database `ca_app`, role `ca_app` |
 | Test database | `ca_app_test` |
 | Logs | `ca-be-node/logs/server.log` (gitignored) |
@@ -107,8 +106,8 @@ Known bugs from the original app are deliberately still present. See `MIGRATION_
 5. **Sleep.** The Mac must stay awake to serve requests. On power: `sudo pmset -c sleep 0`.
 6. **No automatic backups.** The data now exists on one disk. See the commands below.
 7. **Email is not configured.** `EMAIL_SERVICE_URL`, `EMAIL_SERVICE_BASE_URL`, `EMAIL_USER`, `EMAIL_PASSWORD` and `APP_CODE` were not supplied, so email routes will fail until they are added to `ca-be-node/.env`. Copy them from Render's settings.
-8. **The macOS firewall is off** and the app listens on all interfaces, so anyone on the same network can reach it. This includes `PATCH /ca/submissions/:id/active`, which has no auth (known bug) and `CORS_ORIGIN=*`.
-9. **Rotate exposed credentials.** The MongoDB URLs and `JWT_SECRET` were shared in plain text in a chat session. The `prod` URL also grants access to the unrelated TechHeaven data. Rotating `JWT_SECRET` logs everyone out.
+8. **Review network exposure** of this machine before going live.
+9. **Rotate credentials** used during the migration.
 10. **Delete `ca-be-node/.env.migration`** once the final import is done.
 11. **Knowledge-base backend package.** `src/knowledge-base/` on this branch is Mongoose-based. It is not on `main` and would need porting to `src/db/` before being merged into `ca-be-node`.
 
