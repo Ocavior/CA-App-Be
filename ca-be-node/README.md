@@ -30,9 +30,13 @@ Served at `https://ca-app.ocvrs.in/api/v1` ([API reference](API.md)) from Render
 defined by the Blueprint in [`../render.yaml`](../render.yaml): a web service
 `ca-app-be` and a PostgreSQL database `ca-app-db`, both on the free plan in
 Singapore. `ca-app.ocvrs.in` is a Render custom domain; its Cloudflare DNS record
-is a DNS-only CNAME to `ca-app-be.onrender.com`.
+is a DNS-only CNAME to `ca-app-be-6hsh.onrender.com`.
 
-Pushing to `main` with changes under `ca-be-node/` deploys. Migrations run at
+Render reads the repo as a public URL (the Render GitHub app has no access to
+Ocavior/CA-App-Be yet), so pushes don't deploy on their own: click **Manual
+Deploy** on `ca-app-be`, or **Manual sync** on the `ca-app` Blueprint after
+editing `render.yaml`. Once an Ocavior org owner grants the Render GitHub app
+access to this repo, pushes to `main` that change `ca-be-node/` deploy. Migrations run at
 start (`npm run db:migrate && npm start`), and a deploy that fails them or the
 health check at `/api/v1/ca/health` leaves the previous version serving. Render
 does not run the test suite; run it locally before merging (see `../test/README.md`).
