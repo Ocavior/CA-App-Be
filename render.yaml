@@ -1,0 +1,53 @@
+# Render Blueprint for ca-be-node, served at https://ca-app.ocvrs.in/api/v1.
+# Render deploys on every push to main that changes ca-be-node/ (rootDir).
+services:
+  - type: web
+    name: ca-app-be
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: ca-be-node
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    # Free instances have no pre-deploy step, so migrations run at start.
+    # db:migrate exits non-zero on failure, which fails the deploy.
+    startCommand: npm run db:migrate && npm start
+    healthCheckPath: /api/v1/ca/health
+    domains:
+      - ca-app.ocvrs.in
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ca-app-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: SALT_ROUNDS
+        value: "10"
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: WHATSAPP_API_BASE_URL
+        value: https://whatsapp-backend-ln7k.onrender.com/api/whatsapp
+      - key: EMAIL_SERVICE_URL
+        sync: false
+      - key: EMAIL_SERVICE_BASE_URL
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: APP_CODE
+        sync: false
+
+databases:
+  - name: ca-app-db
+    plan: free
+    region: singapore
+    databaseName: ca_app
+    user: ca_app
+    postgresMajorVersion: "17"

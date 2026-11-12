@@ -370,9 +370,12 @@ async function main() {
   const mongoUri = readEnvValue('.env.migration', 'SOURCE_MONGODB_URI');
   const databaseUrl = readEnvValue('.env', 'DATABASE_URL');
 
+  // --target-host=<host> allows exactly that remote host (e.g. Render's), so a
+  // stray DATABASE_URL can't be written to by accident.
   const host = new URL(databaseUrl).hostname;
-  if (!LOCAL_HOSTS.has(host)) {
-    throw new Error('Refusing to run: DATABASE_URL does not point at 127.0.0.1 or localhost');
+  const allowedHost = (process.argv.find(a => a.startsWith('--target-host=')) || '').split('=')[1];
+  if (!LOCAL_HOSTS.has(host) && host !== allowedHost) {
+    throw new Error('Refusing to run: DATABASE_URL does not point at 127.0.0.1, localhost or --target-host');
   }
 
   console.log('Reading source collections...');

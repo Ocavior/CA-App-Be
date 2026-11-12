@@ -26,33 +26,34 @@ otherwise suggest).
 
 ## Deployment
 
-Served at `https://ca-app.ocvrs.in/api/v1` ([API reference](API.md)) from a Mac,
-through a Cloudflare Tunnel. Set up once with `ops/setup-server.sh`, after
-`cloudflared tunnel login`.
+Served at `https://ca-app.ocvrs.in/api/v1` ([API reference](API.md)) from Render,
+defined by the Blueprint in [`../render.yaml`](../render.yaml): a web service
+`ca-app-be` and a PostgreSQL database `ca-app-db`, both on the free plan in
+Singapore. `ca-app.ocvrs.in` is a Render custom domain; its Cloudflare DNS record
+is a DNS-only CNAME to `ca-app-be.onrender.com`.
 
-Pushing to `main` deploys: every minute `ops/auto-deploy.sh` checks `origin/main`,
-and for new `ca-be-node/` or `test/` changes it runs the test suite, then releases
-to `~/srv/ca-app/releases/` and restarts. A failed test or health check leaves the
-previous version running. It polls because the repo is public, and a self-hosted
-GitHub Actions runner would let pull requests from forks run code on this machine.
+Pushing to `main` with changes under `ca-be-node/` deploys. Migrations run at
+start (`npm run db:migrate && npm start`), and a deploy that fails them or the
+health check at `/api/v1/ca/health` leaves the previous version serving. Render
+does not run the test suite; run it locally before merging (see `../test/README.md`).
 
-Production secrets are in `~/srv/ca-app/shared/.env`.
+Secrets (`JWT_SECRET`, `EMAIL_*`, `APP_CODE`) are set in the Render dashboard.
+On the free plan the service sleeps after 15 idle minutes (the next request takes
+about a minute) and the database is deleted 30 days after creation unless it is
+upgraded.
 
-```bash
-launchctl kickstart -k gui/$(id -u)/com.ocavior.ca-app-be     # restart the API
-launchctl bootout gui/$(id -u)/com.ocavior.ca-app-deploy      # pause auto-deploy
-tail -f ~/Library/Logs/ca-app-be/deploy.log                   # deploy history
-tail -f ~/Library/Logs/ca-app-be/server.log                   # API logs
-tail -f ~/Library/Logs/ca-app-be/tunnel.log                   # tunnel logs
-```
+`ops/` holds the previous self-hosted setup (a Mac with launchd and a Cloudflare
+Tunnel). It is no longer in use.
 
 ## Importing data from MongoDB
 
 `npm run db:import -- --replace` copies the four CA collections from
-`SOURCE_MONGODB_URI` (in the gitignored `.env.migration`) into the local database,
+`SOURCE_MONGODB_URI` (in the gitignored `.env.migration`) into `DATABASE_URL`,
 then compares every field of every document on both sides. It only reads from
 the source. `--replace` discards what is in the local tables, including anything
-written through this server since the last import.
+written through this server since the last import. It only writes to localhost
+unless given `--target-host=<host>` naming the remote host, e.g. Render's external
+database host (add `?sslmode=require` to its URL).
 
 ## Backups
 
