@@ -82,7 +82,7 @@ Errors look like `{ "success": false, "message": "..." }`. A missing token retur
 
 ## Messaging and conversations
 
-These call the separate WhatsApp and email services.
+These call the separate WhatsApp service, and send email through Gmail (or the external email service, if configured).
 
 | Method | Path | Access | Purpose |
 |---|---|---|---|
@@ -90,7 +90,7 @@ These call the separate WhatsApp and email services.
 | POST | `/messages/sendTemplate` | Token | Send one WhatsApp template |
 | POST | `/messages/sendBulkTemplate` | Token | Send a template in bulk |
 | POST | `/notifications/whatsapp/bulk` | Token | Send WhatsApp messages in bulk |
-| POST | `/notifications/email/bulk` | Token | Send email in bulk (needs email settings on the server) |
+| POST | `/notifications/email/bulk` | Token | Send email in bulk (needs email settings on the server; Gmail allows about 500 recipients a day) |
 | GET | `/emailLogs` | Token | Email logs |
 | GET | `/conversations` | Token | List conversations |
 | GET | `/conversations/search` | Token | Search conversations. Query: `q` |

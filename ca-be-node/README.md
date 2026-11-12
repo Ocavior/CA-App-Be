@@ -42,6 +42,10 @@ health check at `/api/v1/ca/health` leaves the previous version serving. Render
 does not run the test suite; run it locally before merging (see `../test/README.md`).
 
 Secrets (`JWT_SECRET`, `EMAIL_*`, `APP_CODE`) are set in the Render dashboard.
+Email goes out through Gmail SMTP as `EMAIL_USER` with a Google App Password in
+`EMAIL_PASSWORD` (Gmail allows about 500 recipients a day), and `/emailLogs`
+reads the `email_logs` table. Setting `EMAIL_SERVICE_URL` and
+`EMAIL_SERVICE_BASE_URL` switches back to the external email service.
 On the free plan the service sleeps after 15 idle minutes (the next request takes
 about a minute) and the database is deleted 30 days after creation unless it is
 upgraded.
