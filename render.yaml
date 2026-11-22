@@ -38,7 +38,7 @@ services:
       - key: EMAIL_SERVICE_BASE_URL
         sync: false
       - key: EMAIL_USER
-        sync: false
+        value: official.masterbrains@gmail.com
       - key: EMAIL_PASSWORD
         sync: false
       - key: APP_CODE
