@@ -30,6 +30,9 @@ function corsHeaders() {
 // before the handler runs, so there's no streaming-behavior mismatch here).
 app.use(express.raw({ type: () => true, limit: '20mb' }));
 
+// Plain pages outside /api/v1, served before the API catch-all below.
+require('./publicPages').registerPublicPages(app);
+
 // Wraps a Buffer as a genuine (unconsumed) WHATWG ReadableStream, matching
 // the real type of Azure Functions v4's HttpRequest.body - NOT a plain
 // Buffer. This matters more than it looks: WhatsappTemplateConttroller
