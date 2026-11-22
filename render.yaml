@@ -39,6 +39,12 @@ services:
         sync: false
       - key: EMAIL_USER
         value: official.masterbrains@gmail.com
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
       - key: EMAIL_PASSWORD
         sync: false
       - key: APP_CODE

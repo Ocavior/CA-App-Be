@@ -4,9 +4,14 @@ const { query } = require('../db/pool');
 const { generateId } = require('../db/objectId');
 const logger = require('../utils/logger');
 
-// Without EMAIL_SERVICE_URL, mail goes straight out through Gmail SMTP as
-// EMAIL_USER (EMAIL_PASSWORD is a Google App Password), and logs are kept in
-// the email_logs table instead of the external service.
+const MailComposer = require('nodemailer/lib/mail-composer');
+
+// Without EMAIL_SERVICE_URL, mail is sent as EMAIL_USER and logs are kept in
+// the email_logs table instead of the external service. With GMAIL_CLIENT_ID,
+// GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN set, it goes through the Gmail
+// API over HTTPS; Render's free plan blocks the SMTP ports, so this is the
+// path that works there. Otherwise it falls back to Gmail SMTP with a Google
+// App Password in EMAIL_PASSWORD.
 let transporter;
 function getTransporter() {
     if (!transporter) {
@@ -16,6 +21,28 @@ function getTransporter() {
         });
     }
     return transporter;
+}
+
+function gmailApiConfigured() {
+    return Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
+}
+
+let gmailToken = { value: null, expiresAt: 0 };
+async function getGmailAccessToken() {
+    if (gmailToken.value && Date.now() < gmailToken.expiresAt - 60000) return gmailToken.value;
+    try {
+        const { data } = await axios.post('https://oauth2.googleapis.com/token', new URLSearchParams({
+            client_id: process.env.GMAIL_CLIENT_ID,
+            client_secret: process.env.GMAIL_CLIENT_SECRET,
+            refresh_token: process.env.GMAIL_REFRESH_TOKEN,
+            grant_type: 'refresh_token'
+        }).toString(), { timeout: 30000, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+        gmailToken = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+        return gmailToken.value;
+    } catch (error) {
+        const reason = error.response?.data?.error_description || error.response?.data?.error || error.message;
+        throw new Error(`Gmail authorization failed: ${reason}`);
+    }
 }
 
 async function saveLog({ recipients, subject, emailMessage, status, emailDetails }) {
@@ -84,7 +111,9 @@ class EmailApiService {
             if (attachments) payload.attachments = attachments;
 
             if (!EmailApiService.emailConfig.apiUrl) {
-                return await EmailApiService.sendViaSmtp(payload);
+                return gmailApiConfigured()
+                    ? await EmailApiService.sendViaGmailApi(payload)
+                    : await EmailApiService.sendViaSmtp(payload);
             }
 
             const response = await axios.post(
@@ -109,6 +138,42 @@ class EmailApiService {
             if (error.request) {
                 throw new Error('Email service not responding');
             }
+            throw error;
+        }
+    }
+
+    static async sendViaGmailApi({ to, subject, htmlTemplate, textTemplate, from, emailMessage, cc, bcc, attachments }) {
+        if (!process.env.EMAIL_USER) {
+            throw new Error('Email is not configured: set EMAIL_USER');
+        }
+        const recipients = Array.isArray(to) ? to : [to];
+        const log = { recipients, subject, emailMessage };
+        try {
+            const mime = await new MailComposer({
+                from: from ? { name: from, address: process.env.EMAIL_USER } : process.env.EMAIL_USER,
+                to: recipients,
+                cc: cc || undefined,
+                bcc: bcc || undefined,
+                subject,
+                html: htmlTemplate,
+                text: textTemplate,
+                attachments: attachments || undefined
+            }).compile().build();
+            const accessToken = await getGmailAccessToken();
+            let data;
+            try {
+                ({ data } = await axios.post(
+                    'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+                    { raw: mime.toString('base64url') },
+                    { timeout: 30000, headers: { Authorization: `Bearer ${accessToken}` } }
+                ));
+            } catch (error) {
+                throw new Error(`Gmail API error: ${error.response?.data?.error?.message || error.message}`);
+            }
+            await saveLog({ ...log, status: 'sent', emailDetails: { provider: 'gmail-api', messageId: data.id } });
+            return { messageId: data.id, status: 'sent' };
+        } catch (error) {
+            await saveLog({ ...log, status: 'failed', emailDetails: { provider: 'gmail-api', error: error.message } });
             throw error;
         }
     }
